@@ -1,0 +1,180 @@
+// Characterization tests for the INI contract: the keys the mod reads, the
+// defaults it falls back to, and the agreement between the file it writes on
+// first run and the defaults compiled into Config. A key renamed on one side
+// only would otherwise ship as a setting that silently does nothing.
+
+#include "config.h"
+
+#include <cstdio>
+#include <string>
+
+#include <windows.h>
+
+#include "test_support.h"
+
+namespace {
+
+using kcd_tests::Check;
+using kcd_tests::NearEqual;
+
+std::string MakeTempDir()
+{
+    char tempRoot[MAX_PATH]{};
+    GetTempPathA(MAX_PATH, tempRoot);
+    std::string dir = std::string(tempRoot) + "kcd-ht-config-tests";
+    CreateDirectoryA(dir.c_str(), nullptr);
+    DeleteFileA((dir + "\\HeadTracking.ini").c_str());
+    return dir;
+}
+
+void WriteIni(const std::string& dir, const char* body)
+{
+    FILE* file = nullptr;
+    fopen_s(&file, (dir + "\\HeadTracking.ini").c_str(), "w");
+    if (file == nullptr) return;
+    std::fputs(body, file);
+    std::fclose(file);
+}
+
+void MissingFileTests(int& failures)
+{
+    const std::string dir = MakeTempDir();
+
+    kcd2_ht::Config config;
+    kcd2_ht::LoadConfig(dir, config);
+
+    Check(failures, config.udp_port == 4242, "a missing INI leaves the OpenTrack port at 4242");
+    Check(failures, config.enable_on_startup, "a missing INI leaves tracking enabled on startup");
+    Check(failures, config.world_space_yaw, "a missing INI leaves yaw horizon-locked");
+    Check(failures, config.move_crosshair,
+          "a missing INI still moves the game's crosshair onto the aim point");
+    Check(failures, NearEqual(config.local_smoothing, 0.0f),
+          "local smoothing defaults to 0 - a tracker on this machine is already stable");
+    Check(failures, NearEqual(config.remote_smoothing, 0.15f),
+          "remote smoothing defaults to 0.15 for a phone over WiFi");
+    Check(failures, config.position_enabled, "position tracking defaults on");
+    Check(failures, NearEqual(config.limit_z, 0.40f) && NearEqual(config.limit_z_back, 0.10f),
+          "the Z limits default asymmetric: more room to lean in than back");
+}
+
+void ParsingTests(int& failures)
+{
+    const std::string dir = MakeTempDir();
+    WriteIni(dir,
+        "[HeadTracking]\nUdpPort=5252\nEnableOnStartup=0\nWorldSpaceYaw=0\nMoveCrosshair=0\n"
+        "LocalSmoothing=0.25\nRemoteSmoothing=0.75\nMaxExtrapolationFraction=0\n"
+        "[Position]\nEnabled=0\n"
+        "LimitX=0.11\nLimitY=0.22\nLimitYDown=0.05\nLimitZ=0.33\nLimitZBack=0.44\n"
+        "[Hotkeys]\nToggleKey=0x51\nPositionKey=0x52\nYawModeKey=0x53\n");
+
+    kcd2_ht::Config config;
+    kcd2_ht::LoadConfig(dir, config);
+
+    Check(failures, config.udp_port == 5252, "UdpPort is read");
+    Check(failures, !config.enable_on_startup && !config.world_space_yaw
+                 && !config.move_crosshair,
+          "the booleans are read");
+    Check(failures, NearEqual(config.local_smoothing, 0.25f)
+                 && NearEqual(config.remote_smoothing, 0.75f),
+          "both smoothing values are read");
+    Check(failures, NearEqual(config.max_extrapolation_fraction, 0.0f),
+          "extrapolation can be turned off");
+    Check(failures, !config.position_enabled, "position tracking can be turned off");
+    Check(failures, NearEqual(config.limit_x, 0.11f) && NearEqual(config.limit_y, 0.22f)
+                 && NearEqual(config.limit_y_down, 0.05f) && NearEqual(config.limit_z, 0.33f)
+                 && NearEqual(config.limit_z_back, 0.44f),
+          "every position limit is read, including the asymmetric LimitYDown");
+    Check(failures, config.toggle_key == 0x51 && config.position_key == 0x52
+                 && config.yaw_mode_key == 0x53,
+          "the hotkeys are read as hex");
+}
+
+void ValidationTests(int& failures)
+{
+    const std::string dir = MakeTempDir();
+    WriteIni(dir,
+        "[HeadTracking]\nUdpPort=99999\nLocalSmoothing=nan\nRemoteSmoothing=1e400\n"
+        "[Position]\nLimitZ=-3\n");
+
+    kcd2_ht::Config config;
+    kcd2_ht::LoadConfig(dir, config);
+
+    Check(failures, config.udp_port == 4242, "an out-of-range port falls back to the default");
+    Check(failures, NearEqual(config.local_smoothing, 0.0f),
+          "a NaN smoothing value falls back to the default rather than poisoning the filter");
+    Check(failures, config.remote_smoothing >= 0.0f && config.remote_smoothing <= 1.0f,
+          "an infinite smoothing value is clamped into range");
+    Check(failures, config.limit_z > 0.0f, "a negative position limit is rejected");
+}
+
+// A hotkey code is the one setting whose failure is completely silent: the
+// poller skips an entry whose code is 0, so a mistyped ToggleKey leaves the
+// player unable to turn tracking off with nothing anywhere saying why.
+void HotkeyValidationTests(int& failures)
+{
+    const std::string dir = MakeTempDir();
+    WriteIni(dir, "[Hotkeys]\nToggleKey=0\nPositionKey=0x1FF\nYawModeKey=zzz\n");
+
+    kcd2_ht::Config config;
+    kcd2_ht::LoadConfig(dir, config);
+
+    Check(failures, config.toggle_key == 0x23,
+          "ToggleKey=0 falls back to End rather than silently unbinding the toggle");
+    Check(failures, config.position_key == 0x21,
+          "a hotkey past the last virtual-key code falls back to Page Up");
+    Check(failures, config.yaw_mode_key == 0x22,
+          "a hotkey that is not a number at all falls back to Page Down");
+
+    const std::string valid = MakeTempDir();
+    WriteIni(valid, "[Hotkeys]\nToggleKey=0x01\nPositionKey=0xFE\n");
+
+    kcd2_ht::Config edges;
+    kcd2_ht::LoadConfig(valid, edges);
+    Check(failures, edges.toggle_key == 0x01 && edges.position_key == 0xFE,
+          "both ends of the virtual-key range are still accepted");
+}
+
+void DefaultFileMatchesDefaultsTests(int& failures)
+{
+    const std::string dir = MakeTempDir();
+    kcd2_ht::WriteDefaultConfigIfMissing(dir);
+
+    kcd2_ht::Config fromFile;
+    kcd2_ht::LoadConfig(dir, fromFile);
+    const kcd2_ht::Config compiled;
+
+    Check(failures, fromFile.udp_port == compiled.udp_port
+                 && fromFile.enable_on_startup == compiled.enable_on_startup
+                 && fromFile.world_space_yaw == compiled.world_space_yaw
+                 && fromFile.move_crosshair == compiled.move_crosshair
+                 && NearEqual(fromFile.local_smoothing, compiled.local_smoothing)
+                 && NearEqual(fromFile.remote_smoothing, compiled.remote_smoothing)
+                 && NearEqual(fromFile.max_extrapolation_fraction,
+                              compiled.max_extrapolation_fraction)
+                 && fromFile.position_enabled == compiled.position_enabled
+                 && NearEqual(fromFile.limit_x, compiled.limit_x)
+                 && NearEqual(fromFile.limit_y, compiled.limit_y)
+                 && NearEqual(fromFile.limit_y_down, compiled.limit_y_down)
+                 && NearEqual(fromFile.limit_z, compiled.limit_z)
+                 && NearEqual(fromFile.limit_z_back, compiled.limit_z_back)
+                 && fromFile.toggle_key == compiled.toggle_key
+                 && fromFile.position_key == compiled.position_key
+                 && fromFile.yaw_mode_key == compiled.yaw_mode_key,
+          "the INI written on first run round-trips to the compiled defaults");
+}
+
+}  // namespace
+
+int RunConfigTests()
+{
+    int failures = 0;
+    std::cout << "Config tests\n";
+
+    MissingFileTests(failures);
+    ParsingTests(failures);
+    ValidationTests(failures);
+    HotkeyValidationTests(failures);
+    DefaultFileMatchesDefaultsTests(failures);
+
+    return kcd_tests::Report("Config tests", failures);
+}

@@ -1,0 +1,57 @@
+# Project-local tooling and agent scaffolding (per AGENTS.md)
+.claude/
+.lab/
+.skills/
+skills/
+AGENTS.md
+CLAUDE.md
+NEXUS_MODS.md
+mcp.json
+.mcp.json
+
+# Build / tooling output
+.pixi/
+.vs/
+.vscode/
+.idea/
+build/
+bin/
+obj/
+libs/
+dist/
+release/
+node_modules/
+CMakeUserPresets.json
+.headtracking-state.json
+*.user
+*.suo
+*.aps
+*.ilk
+*.pdb
+
+# Session scratch: reverse-engineering output, captures, traces, dumps.
+# None of it is deliverable, all of it is bulky, some reads badly out of context.
+scratch/
+.scratch/
+ghidra/
+ghidra_projects/
+*.gpr
+*.rep/
+*.gzf
+*.log
+*.dmp
+*.bin
+captures/
+screenshots/
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Game binaries. Never committed, never redistributed. An RE session copies
+# these into the tree to fingerprint or disassemble them, and *.dll cannot be
+# ignored wholesale because the vendored ASI loader is a tracked .dll.
+KingdomCome.exe
+WHGame.dll
+WHGameArm.dll
+*.pak
