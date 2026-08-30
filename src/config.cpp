@@ -124,7 +124,10 @@ void LoadConfig(const std::string& exeDir, Config& out) {
                                    0.01f, kMaxPositionLimit);
     out.limit_y = ReadFloatChecked(reader, kPosition, "LimitY", out.limit_y,
                                    0.01f, kMaxPositionLimit);
-    out.limit_y_down = ReadFloatChecked(reader, kPosition, "LimitYDown", out.limit_y_down,
+    // Falls back to whatever LimitY resolved to, not to the struct default: a config
+    // that sets only LimitY would otherwise keep 0.20 m of downward travel while the
+    // upward budget moved, and nothing in the log would say the key was half-effective.
+    out.limit_y_down = ReadFloatChecked(reader, kPosition, "LimitYDown", out.limit_y,
                                         0.01f, kMaxPositionLimit);
     out.limit_z = ReadFloatChecked(reader, kPosition, "LimitZ", out.limit_z,
                                    0.01f, kMaxPositionLimit);
