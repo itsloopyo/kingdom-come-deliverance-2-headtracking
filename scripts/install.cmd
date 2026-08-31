@@ -165,7 +165,7 @@ echo Exe dir : !EXE_DIR!
 echo.
 
 :: -------- Game-running check --------
-tasklist /fi "imagename eq %GAME_EXE%" 2>nul | findstr /i "%GAME_EXE%" >nul 2>&1
+tasklist /fi "imagename eq %GAME_EXE%" 2>nul | findstr /i /c:"%GAME_EXE%" >nul 2>&1
 if not errorlevel 1 (
     echo ERROR: %GAME_DISPLAY_NAME% is currently running.
     echo Please close the game before installing.
