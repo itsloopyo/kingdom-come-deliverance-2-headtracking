@@ -69,7 +69,15 @@ Select OpenTrack's **neuralnet tracker** input. It needs no markers and no IR cl
 
 ### Phone App Setup
 
-Any phone tracker that speaks the OpenTrack UDP protocol works, e.g. [Headcam](https://headcam.app), which I made so anybody could get high quality tracking for free. If the app smooths its own output, send straight to this PC's IP on port `4242` and skip OpenTrack entirely. If you want OpenTrack's mapping curves, point the app at OpenTrack instead and let OpenTrack relay to `127.0.0.1:4242`.
+A phone app can reach the mod directly, with no OpenTrack on the PC, if it sends
+the OpenTrack UDP datagram. Point it at this PC's IP address (run `ipconfig` to
+find it) on port `4242`. Not every phone tracker speaks this protocol, so check
+yours for an OpenTrack or UDP output option first. [Headcam](https://headcam.app)
+sends it, and I wrote it so decent tracking is free for anyone who already owns
+a phone.
+
+If you want OpenTrack's mapping curves, point the app at OpenTrack instead and
+let OpenTrack relay to `127.0.0.1:4242`.
 
 ## Controls
 
