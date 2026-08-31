@@ -1,6 +1,8 @@
 #include "config.h"
 
 #include <cstdint>
+#include <cstdio>
+#include <string>
 #include <windows.h>
 
 #include <cameraunlock/config/ini_reader.h>
@@ -147,7 +149,15 @@ void WriteDefaultConfigIfMissing(const std::string& exeDir) {
     // GetPrivateProfileStringA, which does not treat ';' as an inline comment
     // introducer, so "Enabled=true ; note" matches no known bool spelling and
     // silently falls back to the default.
-    static const char kDefaults[] =
+    //
+    // LimitYDown is formatted from cameraunlock::PositionSettings{}.limit_y_down
+    // rather than written as a literal, so a change to core's default cannot
+    // silently disagree with the file this mod ships.
+    char limitYDown[16] = {};
+    std::snprintf(limitYDown, sizeof(limitYDown), "%.2f",
+                  static_cast<double>(cameraunlock::PositionSettings{}.limit_y_down));
+
+    std::string kDefaults =
         "[HeadTracking]\r\n"
         "UdpPort=4242\r\n"
         "; Start with head tracking already on.\r\n"
@@ -172,7 +182,10 @@ void WriteDefaultConfigIfMissing(const std::string& exeDir) {
         "Enabled=true\r\n"
         "LimitX=0.30\r\n"
         "LimitY=0.20\r\n"
-        "LimitYDown=0.20\r\n"
+        "LimitYDown=";
+    kDefaults += limitYDown;
+    kDefaults +=
+        "\r\n"
         "LimitZ=0.40\r\n"
         "LimitZBack=0.10\r\n"
         "\r\n"
@@ -193,9 +206,9 @@ void WriteDefaultConfigIfMissing(const std::string& exeDir) {
     // on the next launch, so the player gets whatever keys landed above the cut
     // and defaults for the rest, with nothing anywhere saying so. GetLastError is
     // read before CloseHandle, which overwrites it.
-    const DWORD size = static_cast<DWORD>(sizeof(kDefaults) - 1);
+    const DWORD size = static_cast<DWORD>(kDefaults.size());
     DWORD written = 0;
-    const BOOL wrote = WriteFile(file, kDefaults, size, &written, nullptr);
+    const BOOL wrote = WriteFile(file, kDefaults.data(), size, &written, nullptr);
     const DWORD writeError = GetLastError();
     CloseHandle(file);
     if (!wrote || written != size) {
