@@ -1,5 +1,8 @@
 #pragma once
 
+#include <cameraunlock/data/position_settings.h>
+#include <cameraunlock/math/smoothing_utils.h>
+
 #include <string>
 
 namespace kcd2_ht {
@@ -19,8 +22,8 @@ struct Config {
     // Two smoothing parameters, picked per connection from the packet source
     // address. Both cover rotation and position. There is no third knob and no
     // hidden floor - see AGENTS.md "Smoothing Model".
-    float local_smoothing = 0.0f;
-    float remote_smoothing = 0.15f;
+    float local_smoothing = static_cast<float>(cameraunlock::math::kDefaultLocalSmoothing);
+    float remote_smoothing = static_cast<float>(cameraunlock::math::kDefaultRemoteSmoothing);
 
     // How far past the newest sample the interpolators may continue the last
     // velocity, as a fraction of the estimated sample interval. 0 interpolates
@@ -33,11 +36,11 @@ struct Config {
     bool move_crosshair = true;
 
     bool position_enabled = true;
-    float limit_x = 0.30f;
-    float limit_y = 0.20f;
-    float limit_y_down = 0.20f;
-    float limit_z = 0.40f;
-    float limit_z_back = 0.10f;
+    float limit_x = cameraunlock::PositionSettings{}.limit_x;
+    float limit_y = cameraunlock::PositionSettings{}.limit_y;
+    float limit_y_down = cameraunlock::PositionSettings{}.limit_y_down;
+    float limit_z = cameraunlock::PositionSettings{}.limit_z;
+    float limit_z_back = cameraunlock::PositionSettings{}.limit_z_back;
 };
 
 // There is deliberately NO per-axis sensitivity or inversion here. The tracker
