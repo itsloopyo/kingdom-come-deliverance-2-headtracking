@@ -47,6 +47,7 @@ add_subdirectory(cameraunlock-core/cpp ${CMAKE_BINARY_DIR}/cameraunlock-core)
 set(MOD_SOURCES
     src/dllmain.cpp
     src/headtracking_mod.cpp
+    src/ads.cpp
     src/config.cpp
     src/exe_paths.cpp
     src/hotkeys.cpp

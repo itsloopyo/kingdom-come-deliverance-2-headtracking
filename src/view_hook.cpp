@@ -1,10 +1,12 @@
 #include "view_hook.h"
 
 #include <atomic>
+#include <windows.h>
 
 #include <cameraunlock/hooks/hook_manager.h>
 #include <cameraunlock/time/frame_clock.h>
 
+#include "ads.h"
 #include "aim_projection.h"
 #include "builds/build_registry.h"
 #include "cryengine_types.h"
@@ -44,6 +46,23 @@ namespace kcd2_ht::view_hook
         // one dt per rendered frame.
         FrameClock g_frameClock;
 
+        // Whether the sights were up on the last frame that reached the ADS
+        // stage. Reported even in the paused mode, where the pose has been faded
+        // to nothing: the mode says what tracking does, this says what the game
+        // is doing, and the heartbeat needs both to be readable.
+        std::atomic<bool> g_aiming{false};
+
+        // Every path that declines to apply a pose is a real suppression, so the
+        // ADS fade and the entry pose are dropped with it. Returning early
+        // without this leaves the next aim resuming against a pose captured
+        // before the suppression.
+        bool Suppressed()
+        {
+            ads::Suppress();
+            g_aiming.store(false, std::memory_order_relaxed);
+            return false;
+        }
+
         // The whole injection. Runs after the engine has composed m_viewParams
         // into the camera matrix, and writes ONLY that matrix.
         // Returns false when nothing was injected this frame - tracking toggled
@@ -52,13 +71,13 @@ namespace kcd2_ht::view_hook
         // game wanted it with nothing to put back.
         bool InjectHeadPose(void* self)
         {
-            if (!Runtime().trackingEnabled.load()) return false;
+            if (!Runtime().trackingEnabled.load()) return Suppressed();
 
             const float dt = g_frameClock.Tick();
-            if (!g_session->Update(dt)) return false;
+            if (!g_session->Update(dt)) return Suppressed();
 
             HeadPose pose;
-            if (!g_session->GetRotation(pose.yaw, pose.pitch, pose.roll)) return false;
+            if (!g_session->GetRotation(pose.yaw, pose.pitch, pose.roll)) return Suppressed();
             const bool positionActive = g_session->GetPositionOffset(pose.x, pose.y, pose.z);
 
             // Said once, not per frame: the processor's smoothed state keeps the
@@ -74,8 +93,15 @@ namespace kcd2_ht::view_hook
                               static_cast<double>(pose.yaw), static_cast<double>(pose.pitch),
                               static_cast<double>(pose.roll), static_cast<double>(pose.x),
                               static_cast<double>(pose.y), static_cast<double>(pose.z));
-                return false;
+                return Suppressed();
             }
+
+            // What the sights are doing to the pose, decided before it is
+            // composed onto the camera so everything downstream - the write,
+            // the frustum rebuild and the reticle projection - agrees on one
+            // pose. In the paused mode this is what fades the head off the
+            // camera and holds it off for the length of the aim.
+            g_aiming.store(ads::Apply(pose, GetTickCount64()), std::memory_order_relaxed);
 
             const auto& offsets = builds::Offsets();
             auto* cameraBytes = reinterpret_cast<std::uint8_t*>(self) + offsets.kCViewCameraOffset;

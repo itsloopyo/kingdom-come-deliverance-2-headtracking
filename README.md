@@ -88,6 +88,7 @@ Two equivalent binding sets, use whichever your keyboard has:
 | Toggle tracking                 | `End`       | `Ctrl+Shift+Y` |
 | Cycle tracking mode             | `Page Up`   | `Ctrl+Shift+G` |
 | Toggle yaw mode (world / local) | `Page Down` | `Ctrl+Shift+H` |
+| Cycle ADS mode                  | `Insert`    | `Ctrl+Shift+U` |
 
 `Page Up` / `Ctrl+Shift+G` cycles tracking mode:
 
@@ -97,6 +98,24 @@ Two equivalent binding sets, use whichever your keyboard has:
 4. Back to normal
 
 `Page Down` / `Ctrl+Shift+H` switches yaw between world-locked (the default, horizon-stable) and camera-local, which follows the camera's current up-axis.
+
+`Insert` / `Ctrl+Shift+U` cycles what happens when you aim a bow or crossbow.
+Both start the same way - raising the sights swings the view onto the point the
+reticle was marking, so your shot lands where you had it lined up - and they
+differ in what happens for the rest of the aim:
+
+1. **Tracking paused** (default) - the game keeps the camera for as long as you
+   are aiming. The sight picture is exactly the game's, and head movement does
+   nothing until you lower the weapon.
+2. **Tracking on, no aim marker** - head tracking carries on from the snapped
+   position, and the game's own aim reticle keeps marking where the shot lands,
+   so nothing extra is drawn over the top of it. That reticle is authoritative:
+   this mod moves it onto the real impact point every frame, so when it and the
+   arrow appear to disagree it is the reticle that is right.
+
+The choice is saved to `HeadTracking.ini`, so it survives a restart. This mod
+draws no on-screen text of its own, so the mode you switched to is named in
+`HeadTracking.log` rather than in a toast.
 
 Every press is named in `HeadTracking.log`.
 

@@ -19,6 +19,7 @@ const char* kIniName = "HeadTracking.ini";
 const char* kTracking = "HeadTracking";
 const char* kHotkeys = "Hotkeys";
 const char* kPosition = "Position";
+const char* kAds = "ADS";
 
 // Metres. Deliberately far wider than anything a player would choose - the
 // bound exists to stop a typo reaching the maths, not to second-guess a setting.
@@ -136,9 +137,95 @@ void LoadConfig(const std::string& exeDir, Config& out) {
     out.limit_z_back = ReadFloatChecked(reader, kPosition, "LimitZBack", out.limit_z_back,
                                         0.01f, kMaxPositionLimit);
 
+    // Read as raw text and parsed with marker DISALLOWED. A file written by a
+    // three-slot sibling mod, or by a later release of this one, would
+    // otherwise select a mode this mod does not have; core's parser answers
+    // `paused` for anything it does not recognise, which is the migration
+    // path as well as the typo path.
+    {
+        const std::string raw = reader.ReadString(kAds, "AdsMode", "");
+        if (!raw.empty())
+        {
+            out.ads_mode = cameraunlock::ads::ParseAdsMode(raw.c_str(), /*allowMarker=*/false);
+            if (raw != cameraunlock::ads::AdsModeValue(out.ads_mode))
+                Log::Line("WARNING: config [%s] AdsMode = %s is not one of paused/tracked "
+                          "- using %s.", kAds, raw.c_str(),
+                          cameraunlock::ads::AdsModeValue(out.ads_mode));
+        }
+    }
+
     out.toggle_key = ReadHotkeyChecked(reader, "ToggleKey", out.toggle_key);
     out.position_key = ReadHotkeyChecked(reader, "PositionKey", out.position_key);
     out.yaw_mode_key = ReadHotkeyChecked(reader, "YawModeKey", out.yaw_mode_key);
+    out.ads_mode_key = ReadHotkeyChecked(reader, "AdsModeKey", out.ads_mode_key);
+}
+
+void PersistAdsMode(const std::string& exeDir, cameraunlock::ads::AdsMode mode) {
+    const std::string path = IniPath(exeDir);
+    const char* value = cameraunlock::ads::AdsModeValue(mode);
+
+    std::string text;
+    {
+        HANDLE in = CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+                                OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (in == INVALID_HANDLE_VALUE) {
+            Log::Line("Could not open %s to save the ADS mode (error %lu) - it is active "
+                      "for this session but will not survive a restart.",
+                      kIniName, GetLastError());
+            return;
+        }
+        char buffer[4096];
+        DWORD read = 0;
+        while (ReadFile(in, buffer, sizeof(buffer), &read, nullptr) && read > 0)
+            text.append(buffer, read);
+        CloseHandle(in);
+    }
+
+    // Find the existing key by scanning line starts, so a match cannot come
+    // from the word appearing inside a comment or another key's value.
+    bool replaced = false;
+    for (size_t i = 0; i < text.size() && !replaced;) {
+        size_t end = text.find('\n', i);
+        if (end == std::string::npos) end = text.size();
+        size_t start = i;
+        while (start < end && (text[start] == ' ' || text[start] == '\t')) ++start;
+        if (_strnicmp(text.c_str() + start, "AdsMode", 7) == 0) {
+            size_t eq = start + 7;
+            while (eq < end && (text[eq] == ' ' || text[eq] == '\t')) ++eq;
+            if (eq < end && text[eq] == '=') {
+                size_t lineEnd = end;
+                if (lineEnd > start && text[lineEnd - 1] == '\r') --lineEnd;
+                text.replace(start, lineEnd - start, std::string("AdsMode=") + value);
+                replaced = true;
+                break;
+            }
+        }
+        i = end + 1;
+    }
+
+    // An INI written before this key existed gets the section appended rather
+    // than being left silently unable to remember the setting.
+    if (!replaced) {
+        if (!text.empty() && text.back() != '\n') text += "\r\n";
+        text += "\r\n[ADS]\r\nAdsMode=";
+        text += value;
+        text += "\r\n";
+    }
+
+    HANDLE out = CreateFileA(path.c_str(), GENERIC_WRITE, 0, nullptr, TRUNCATE_EXISTING,
+                             FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (out == INVALID_HANDLE_VALUE) {
+        Log::Line("Could not write %s to save the ADS mode (error %lu) - it is active for "
+                  "this session but will not survive a restart.", kIniName, GetLastError());
+        return;
+    }
+    DWORD written = 0;
+    const BOOL ok = WriteFile(out, text.data(), static_cast<DWORD>(text.size()),
+                              &written, nullptr);
+    CloseHandle(out);
+    if (!ok || written != text.size())
+        Log::Line("WARNING: %s was only partly written while saving the ADS mode.",
+                  kIniName);
 }
 
 void WriteDefaultConfigIfMissing(const std::string& exeDir) {
@@ -189,11 +276,19 @@ void WriteDefaultConfigIfMissing(const std::string& exeDir) {
         "LimitZ=0.40\r\n"
         "LimitZBack=0.10\r\n"
         "\r\n"
+        "[ADS]\r\n"
+        "; What head tracking does while you are aiming a bow or crossbow.\r\n"
+        ";   paused  - tracking stands down until you lower the weapon (default).\r\n"
+        ";   tracked - tracking stays live, and the game's own aim reticle keeps\r\n"
+        ";             marking where the shot lands.\r\n"
+        "AdsMode=paused\r\n"
+        "\r\n"
         "[Hotkeys]\r\n"
-        "; Windows virtual-key codes. Ctrl+Shift+Y / G / H work as alternatives.\r\n"
+        "; Windows virtual-key codes. Ctrl+Shift+Y / G / H / U work as alternatives.\r\n"
         "ToggleKey=0x23\r\n"
         "PositionKey=0x21\r\n"
-        "YawModeKey=0x22\r\n";
+        "YawModeKey=0x22\r\n"
+        "AdsModeKey=0x2D\r\n";
 
     HANDLE file = CreateFileA(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
                               FILE_ATTRIBUTE_NORMAL, nullptr);

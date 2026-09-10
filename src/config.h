@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cameraunlock/ads/ads_mode.h>
 #include <cameraunlock/data/position_settings.h>
 #include <cameraunlock/math/smoothing_utils.h>
 
@@ -18,6 +19,7 @@ struct Config {
     int toggle_key = 0x23;    // End
     int position_key = 0x21;  // Page Up
     int yaw_mode_key = 0x22;  // Page Down
+    int ads_mode_key = 0x2D;  // Insert
 
     // Two smoothing parameters, picked per connection from the packet source
     // address. Both cover rotation and position. There is no third knob and no
@@ -34,6 +36,12 @@ struct Config {
     // fixed to screen centre, which stops being the aim point the moment the
     // head turns. Off leaves the HUD completely untouched.
     bool move_crosshair = true;
+
+    // What head tracking does while the sights are up. Two slots here -
+    // `paused` and `tracked` - because KCD2 draws its own aim reticle at the
+    // point the shot lands and this mod already moves it, so there is no
+    // `marker` mode to select. Anything else in the file reads as `paused`.
+    cameraunlock::ads::AdsMode ads_mode = cameraunlock::ads::kDefaultAdsMode;
 
     bool position_enabled = true;
     float limit_x = cameraunlock::PositionSettings{}.limit_x;
@@ -54,5 +62,16 @@ struct Config {
 // ever NaN, infinite, or outside the range its consumer can take.
 void LoadConfig(const std::string& exeDir, Config& out);
 void WriteDefaultConfigIfMissing(const std::string& exeDir);
+
+// Writes @p mode back to the INI's [ADS] AdsMode key, so a mode picked with
+// the hotkey survives a restart. It is the player's choice and start-up must
+// not silently discard it.
+//
+// Rewrites that ONE line rather than regenerating the file: everything else
+// in there is the player's, including comments they may have added, and a
+// regenerate would quietly reset any key this build does not know about.
+// Failure is logged and otherwise ignored - the mode still took effect for
+// this session, and a read-only game folder is not worth refusing the key over.
+void PersistAdsMode(const std::string& exeDir, cameraunlock::ads::AdsMode mode);
 
 }

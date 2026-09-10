@@ -6,6 +6,7 @@
 
 #include <cameraunlock/hooks/hook_manager.h>
 
+#include "ads.h"
 #include "builds/build_registry.h"
 #include "hook_install.h"
 #include "logging.h"
@@ -22,6 +23,13 @@ namespace kcd2_ht::cursor
 
         SetCursorPosition_t g_orig = nullptr;
         std::uintptr_t g_moduleBase = 0;
+
+        // Whether the crosshair is actually moved. The hook installs either
+        // way, because the ADS state is read from the call sites it sees and
+        // a player who turned the crosshair move off still wants their sights
+        // detected. With this false the detour passes every call straight
+        // through, so the HUD is left exactly as the game drew it.
+        bool g_moveCrosshair = true;
 
         struct AimState
         {
@@ -79,6 +87,18 @@ namespace kcd2_ht::cursor
             return returnRva == offsets.kCursorCentreReturnRva
                 || returnRva == offsets.kCombatCursorReturnRva
                 || returnRva == offsets.kAimedCursorReturnRva;
+        }
+
+        // The one call site that means the sights are up. The HUD reaches it
+        // only when it has decided to put `CursorCross` at a COMPUTED aim
+        // point; the other branch of that same `if` hides the element, and
+        // the centre site parks it at the middle of the screen for ordinary
+        // exploration. The combat site is the melee cursor and is not an aim
+        // state. So this is the game telling us, in its own HUD code and once
+        // per frame, that a ranged weapon is drawn.
+        bool CallSiteIsRangedAim(std::uintptr_t returnRva)
+        {
+            return returnRva == builds::Offsets().kAimedCursorReturnRva;
         }
 
         bool ScreenSize(float& width, float& height)
@@ -155,8 +175,15 @@ namespace kcd2_ht::cursor
             const std::uintptr_t returnRva =
                 reinterpret_cast<std::uintptr_t>(_ReturnAddress()) - g_moduleBase;
 
+            // Reported before anything else here can decline, and reported
+            // whatever the ADS mode is: the mode says what tracking does with
+            // the sights, this says the sights are up, and the paused mode
+            // needs the second while doing nothing about the first.
+            if (CallSiteIsRangedAim(returnRva)) ads::NoteAimReticle(GetTickCount64());
+
             float dx = 0.0f, dy = 0.0f;
-            if (pos != nullptr && CallSiteIsCursor(returnRva) && AimOffset(dx, dy))
+            if (g_moveCrosshair && pos != nullptr && CallSiteIsCursor(returnRva)
+                    && AimOffset(dx, dy))
             {
                 // For the site that hands in screen centre this is exact. For the
                 // combat site, which hands in an already-aimed position, it is a
@@ -172,9 +199,10 @@ namespace kcd2_ht::cursor
         }
     }
 
-    bool Install(std::uintptr_t moduleBase)
+    bool Install(std::uintptr_t moduleBase, bool moveCrosshair)
     {
         g_moduleBase = moduleBase;
+        g_moveCrosshair = moveCrosshair;
 
         const auto& offsets = builds::Offsets();
         void* target = reinterpret_cast<void*>(moduleBase + offsets.kSetCursorPositionRva);
