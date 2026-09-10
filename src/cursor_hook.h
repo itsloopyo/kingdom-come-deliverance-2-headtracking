@@ -24,9 +24,12 @@ namespace kcd2_ht::cursor
     // @p moveCrosshair decides only whether the aim offset is applied.
     bool Install(std::uintptr_t moduleBase, bool moveCrosshair);
 
+    void PrepareAimMarker();
+    void HideAimMarker();
+
     // Called from the view hook on every frame tracking is applied. Doubles as
     // the liveness signal: when these stop arriving the cursor goes back to
     // wherever the game wanted it, which is what makes menus and loading screens
     // look after themselves.
-    void SubmitAim(const AimProjection& aim, float fovRadians, float projectionRatio);
+    void SubmitAim(const AimProjection& aim, float fovRadians, float projectionRatio, bool aiming);
 }

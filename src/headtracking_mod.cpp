@@ -252,7 +252,8 @@ namespace kcd2_ht
                                 " bound as a receiver) - close it and tracking starts within a"
                                 " second, no restart needed";
             Log::Line("init complete. End = toggle tracking, Page Up = cycle mode (6DOF / "
-                      "rotation only / lean only), Page Down = yaw mode (chords Ctrl+Shift+Y/G/H)."
+                      "rotation only / lean only), Page Down = yaw mode, Insert = ADS mode "
+                      "(paused / marker / tracked; chords Ctrl+Shift+Y/G/H/U)."
                       " %s. Centre in your tracker app - this mod keeps no centre of its own.",
                       portLine.c_str());
         }

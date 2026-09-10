@@ -3,6 +3,7 @@
 #include <cameraunlock/input/chord_hotkeys.h>
 
 #include "ads.h"
+#include "cursor_hook.h"
 #include "exe_paths.h"
 #include "logging.h"
 
@@ -56,18 +57,11 @@ namespace kcd2_ht
             Log::Line("hotkey: yaw mode %s", worldSpace ? "world" : "local");
         }
 
-        // Two slots, not three: KCD2 has its own aim reticle at the impact
-        // point and this mod already moves it, so there is no marker mode to
-        // cycle through. The toast strings come from core so they read the
-        // same in every mod in the fleet; this one has no on-screen text of
-        // its own, so the log is where the mode is named.
-        //
-        // Nothing caches the tracking verdict here - the view hook recomputes
-        // it from this mode on the next frame it draws - so a change made mid
-        // aim takes effect on that aim rather than the next one.
         void CycleAdsMode()
         {
             const ads::AdsMode mode = ads::Cycle();
+            cursor::HideAimMarker();
+            if (mode == ads::AdsMode::Marker) cursor::PrepareAimMarker();
             PersistAdsMode(ExeDirectoryNarrow(), mode);
             Log::Line("hotkey: %s", cameraunlock::ads::AdsModeToast(mode));
         }

@@ -54,44 +54,13 @@ int RunAdsGateTests()
     int failures = 0;
     std::cout << "ADS gate tests\n";
 
-    // Two slots. `marker` is not reachable, because KCD2's own aim reticle is
-    // the marker and this mod already moves it.
     {
         Fresh(AdsMode::Paused);
-        Check(failures, ads::Cycle() == AdsMode::Tracked, "paused cycles to tracked");
-        Check(failures, ads::Cycle() == AdsMode::Paused, "and tracked cycles back to paused");
-        Fresh(AdsMode::Paused);
-        bool sawMarker = false;
-        for (int i = 0; i < 6; ++i)
-            if (ads::Cycle() == AdsMode::Marker) sawMarker = true;
-        Check(failures, !sawMarker, "the cycle never reaches marker");
-    }
-
-    // No observation at all is NOT aiming. Failing toward stock is the safe
-    // direction, and it is what a player with the game's fire cursor turned off
-    // gets.
-    {
-        Fresh(AdsMode::Paused);
-        Check(failures, !ads::IsAiming(1000), "an unreported frame reads as not aiming");
-    }
-
-    // The aim state is polled from an observation that expires, so it heals
-    // without ever seeing an exit edge - the HUD simply stops saying the
-    // reticle is at a computed point.
-    {
-        Fresh(AdsMode::Paused);
-        ads::NoteAimReticle(1000);
-        Check(failures, ads::IsAiming(1000), "the reported frame is aiming");
-        Check(failures, ads::IsAiming(1100), "and stays aiming while the report is fresh");
-        Check(failures, !ads::IsAiming(5000),
-              "and heals to not-aiming with no exit edge at all");
-    }
-
-    // A clock that stepped backwards must not read as a fresh observation.
-    {
-        Fresh(AdsMode::Paused);
-        ads::NoteAimReticle(10000);
-        Check(failures, !ads::IsAiming(500), "a backwards clock does not read as aiming");
+        for (int cycle = 0; cycle < 3; ++cycle) {
+            Check(failures, ads::Cycle() == AdsMode::Marker, "paused cycles to marker");
+            Check(failures, ads::Cycle() == AdsMode::Tracked, "marker cycles to tracked");
+            Check(failures, ads::Cycle() == AdsMode::Paused, "tracked cycles to paused");
+        }
     }
 
     // Paused: the pose fades off the camera and stays off, and the caller is
@@ -101,13 +70,11 @@ int RunAdsGateTests()
     {
         Fresh(AdsMode::Paused);
         HeadPose pose = Head(20.0f, 10.0f, 7.0f, 0.1f, 0.0f, 0.0f);
-        ads::NoteAimReticle(0);
-        const bool aiming = ads::Apply(pose, 0);
+        const bool aiming = ads::Apply(pose, 0, true);
         Check(failures, aiming, "paused still reports the sights up");
 
         HeadPose settled = Head(20.0f, 10.0f, 7.0f, 0.1f, 0.0f, 0.0f);
-        ads::NoteAimReticle(AdsFade::kLowerMs);
-        ads::Apply(settled, AdsFade::kLowerMs);
+        ads::Apply(settled, AdsFade::kLowerMs, true);
         Check(failures, Near(settled.yaw, 0.0f) && Near(settled.pitch, 0.0f)
                      && Near(settled.x, 0.0f),
               "and the head is fully off the camera once the fade has run");
@@ -121,14 +88,12 @@ int RunAdsGateTests()
     {
         Fresh(AdsMode::Paused);
         HeadPose pose = Head(20.0f, 0.0f, 0.0f);
-        ads::NoteAimReticle(0);
-        ads::Apply(pose, 0);
+        ads::Apply(pose, 0, true);
         Check(failures, Near(pose.yaw, 20.0f),
               "the first aiming frame has not moved the pose yet");
 
         HeadPose mid = Head(20.0f, 0.0f, 0.0f);
-        ads::NoteAimReticle(AdsFade::kLowerMs / 2);
-        ads::Apply(mid, AdsFade::kLowerMs / 2);
+        ads::Apply(mid, AdsFade::kLowerMs / 2, true);
         Check(failures, mid.yaw > 0.0f && mid.yaw < 20.0f,
               "and the pose eases off rather than being cut in one frame");
     }
@@ -139,18 +104,15 @@ int RunAdsGateTests()
     {
         Fresh(AdsMode::Tracked);
         HeadPose entry = Head(20.0f, 10.0f, 0.0f);
-        ads::NoteAimReticle(0);
-        ads::Apply(entry, 0);
+        ads::Apply(entry, 0, true);
 
         HeadPose held = Head(20.0f, 10.0f, 0.0f);
-        ads::NoteAimReticle(AdsFade::kLowerMs);
-        Check(failures, ads::Apply(held, AdsFade::kLowerMs), "tracked reports the sights up");
+        Check(failures, ads::Apply(held, AdsFade::kLowerMs, true), "tracked reports the sights up");
         Check(failures, Near(held.yaw, 0.0f) && Near(held.pitch, 0.0f),
               "a head that has not moved since the sights came up is identity");
 
         HeadPose moved = Head(35.0f, 10.0f, 0.0f);
-        ads::NoteAimReticle(AdsFade::kLowerMs + 10);
-        ads::Apply(moved, AdsFade::kLowerMs + 10);
+        ads::Apply(moved, AdsFade::kLowerMs + 10, true);
         Check(failures, Near(moved.yaw, 15.0f),
               "and tracking carries on from there rather than from centre");
     }
@@ -158,11 +120,11 @@ int RunAdsGateTests()
     // Hip fire is untouched in both modes. Anything else would mean the whole of
     // normal play ran through the ADS path.
     {
-        for (const AdsMode mode : { AdsMode::Paused, AdsMode::Tracked })
+        for (const AdsMode mode : { AdsMode::Paused, AdsMode::Marker, AdsMode::Tracked })
         {
             Fresh(mode);
             HeadPose pose = Head(20.0f, 10.0f, 7.0f, 0.1f, 0.2f, 0.3f);
-            const bool aiming = ads::Apply(pose, 1000);
+            const bool aiming = ads::Apply(pose, 1000, false);
             Check(failures, !aiming, "hip fire does not report the sights up");
             Check(failures, Near(pose.yaw, 20.0f) && Near(pose.pitch, 10.0f)
                          && Near(pose.roll, 7.0f) && Near(pose.x, 0.1f)
@@ -176,23 +138,46 @@ int RunAdsGateTests()
     // and the next aim re-enters cleanly instead of resuming at the old offset.
     {
         Fresh(AdsMode::Tracked);
-        ads::NoteAimReticle(0);
         HeadPose entry = Head(90.0f, 0.0f, 0.0f);
-        ads::Apply(entry, 0);
+        ads::Apply(entry, 0, true);
 
         ads::Suppress();
 
         HeadPose after = Head(100.0f, 0.0f, 0.0f);
-        ads::NoteAimReticle(AdsFade::kLowerMs * 4);
-        ads::Apply(after, AdsFade::kLowerMs * 4);
+        ads::Apply(after, AdsFade::kLowerMs * 4, true);
         Check(failures, Near(after.yaw, 100.0f),
               "the frame after a suppression re-enters at the pose it is holding");
 
         HeadPose later = Head(110.0f, 0.0f, 0.0f);
-        ads::NoteAimReticle(AdsFade::kLowerMs * 5);
-        ads::Apply(later, AdsFade::kLowerMs * 5);
+        ads::Apply(later, AdsFade::kLowerMs * 5, true);
         Check(failures, Near(later.yaw, 10.0f),
               "and measures the rest of the aim from there, not from before the suppression");
+    }
+
+    {
+        Fresh(AdsMode::Paused);
+        HeadPose entry = Head(20.0f, 10.0f, 3.0f);
+        ads::Apply(entry, 0, true);
+        HeadPose held = Head(35.0f, 10.0f, 3.0f);
+        ads::Apply(held, AdsFade::kLowerMs, true);
+        Check(failures, Near(held.yaw, 0.0f), "paused holds aim despite head movement");
+
+        ads::Cycle();
+        ads::Cycle();
+        HeadPose tracked = Head(35.0f, 10.0f, 3.0f);
+        ads::Apply(tracked, AdsFade::kLowerMs + 1, true);
+        Check(failures, Near(tracked.yaw, 15.0f), "cycling while aimed activates relative tracking");
+
+        ads::Cycle();
+        HeadPose paused = Head(35.0f, 10.0f, 3.0f);
+        ads::Apply(paused, AdsFade::kLowerMs + 2, true);
+        Check(failures, Near(paused.yaw, 0.0f), "cycling again pauses the same aim");
+
+        HeadPose release = Head(35.0f, 10.0f, 3.0f);
+        Check(failures, !ads::Apply(release, 1000, false), "weapon release immediately clears aim state");
+        HeadPose raised = Head(35.0f, 10.0f, 3.0f);
+        ads::Apply(raised, 1000 + AdsFade::kRaiseMs, false);
+        Check(failures, Near(raised.yaw, 35.0f), "freelook returns after the release fade");
     }
 
     Fresh(AdsMode::Paused);

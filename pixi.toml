@@ -30,9 +30,14 @@ test = { cmd = "ctest --test-dir build -C Release --output-on-failure", depends-
 # depend on it, and CI consumes whatever is committed under vendor/.
 update-deps = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/update-deps.ps1" }
 
-# Print WHGame.dll's PE fingerprint as a paste-ready build-profile stub. The
-# camera RVAs are pinned per build, so this is the first thing to run when a
-# patch lands or a player reports the "staying dormant" log line.
+# Print the PE fingerprint of every installed copy of the game as a paste-ready
+# build-profile stub. The camera RVAs are pinned per build, so this is the first
+# thing to run when a patch lands or a player reports the "staying dormant" log
+# line.
+#
+# Steam, GOG and Game Pass ship separate links of the same game version, each
+# needing its own profile, so this checks all of them rather than the first one
+# detection returns.
 check-fingerprint = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/check-fingerprint.ps1" }
 
 clean = { cmd = """
@@ -46,11 +51,15 @@ clean-all = { cmd = """
 # Package release ZIPs (installer + nexus).
 package = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1", depends-on = ["build"] }
 
-# Build + deploy to the detected game directory (dev loop).
+# Build + deploy to every installed copy of the game (dev loop). Steam, GOG and
+# Game Pass each get the ASI and the loader, in the directory their own
+# executable lives in - Bin\Win64MasterMasterSteamPGO for the first two, the
+# package Content folder for Game Pass.
 install = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/deploy.ps1", depends-on = ["build"] }
 
-# Remove the mod from the game directory.
-uninstall = "scripts\\uninstall.cmd"
+# Remove the mod from every install deploy wrote to. The wrapper calls
+# uninstall.cmd once per install.
+uninstall = "powershell -ExecutionPolicy Bypass -File scripts/uninstall-all.ps1"
 
 # Automated release workflow (version bump, changelog, build, tag, push).
 # Fully unattended: pixi run release <major|minor|patch|nightly|X.Y.Z>

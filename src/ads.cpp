@@ -6,6 +6,8 @@
 #include <cameraunlock/ads/ads_fade.h>
 #include <cameraunlock/ads/entry_pose.h>
 
+#include "logging.h"
+
 namespace kcd2_ht::ads
 {
     namespace
@@ -13,24 +15,7 @@ namespace kcd2_ht::ads
         using cameraunlock::ads::AdsEntryPose;
         using cameraunlock::ads::AdsFade;
 
-        // How long an aim-reticle observation stands for. The HUD positions the
-        // cursor once per rendered frame, so this only has to outlast a frame:
-        // at 30 fps that is 33 ms, and 200 ms rides out a stutter without
-        // holding the aim on for long enough to see after the weapon drops.
-        constexpr std::uint64_t kAimFreshnessMs = 200;
-
-        // Written by the hotkey thread, read by the render thread.
         std::atomic<AdsMode> g_mode{cameraunlock::ads::kDefaultAdsMode};
-
-        // Written by the HUD cursor detour, read by the view hook. Both are game
-        // threads and neither blocks on the other.
-        //
-        // "Seen at all" is its own flag rather than a zero timestamp: the clock
-        // is the caller's, a caller is free to start it at zero, and a sentinel
-        // that collides with a real reading makes the very first aim of a
-        // session read as no aim at all.
-        std::atomic<bool> g_sawAimReticle{false};
-        std::atomic<std::uint64_t> g_lastAimReticleMs{0};
 
         // Render-thread only, so plain members rather than atomics.
         AdsFade g_fade;
@@ -65,30 +50,13 @@ namespace kcd2_ht::ads
 
     AdsMode Cycle()
     {
-        const AdsMode next = cameraunlock::ads::NextAdsModeTwoSlot(Mode());
+        const AdsMode next = cameraunlock::ads::NextAdsMode(Mode());
         SetMode(next);
         return next;
     }
 
-    void NoteAimReticle(std::uint64_t nowMs)
+    bool Apply(HeadPose& pose, std::uint64_t nowMs, bool aiming)
     {
-        g_lastAimReticleMs.store(nowMs, std::memory_order_relaxed);
-        g_sawAimReticle.store(true, std::memory_order_relaxed);
-    }
-
-    bool IsAiming(std::uint64_t nowMs)
-    {
-        if (!g_sawAimReticle.load(std::memory_order_relaxed)) return false;
-        const std::uint64_t seen = g_lastAimReticleMs.load(std::memory_order_relaxed);
-        // A clock that stepped backwards must not read as a fresh observation,
-        // so the comparison is one-sided rather than a subtraction.
-        return nowMs >= seen && (nowMs - seen) < kAimFreshnessMs;
-    }
-
-    bool Apply(HeadPose& pose, std::uint64_t nowMs)
-    {
-        const bool aiming = IsAiming(nowMs);
-
         // The fade's `aiming` input is the game's own state, never the gate's
         // verdict. Feeding a verdict back in makes the fade start raising the
         // instant it finishes lowering, several times a second.
@@ -100,7 +68,23 @@ namespace kcd2_ht::ads
         // been reset would freeze a pre-suppression pose for the whole aim.
         const AdsEntryPose::Pose relative = g_entry.Relative(aiming, /*live=*/true, absolute);
 
-        FromCore(cameraunlock::ads::BlendAdsPose(Mode(), scale, absolute, relative), pose);
+        const AdsMode mode = Mode();
+        FromCore(cameraunlock::ads::BlendAdsPose(mode, scale, absolute, relative), pose);
+        static std::uint64_t lastLogMs = 0;
+        static AdsMode lastMode = cameraunlock::ads::kDefaultAdsMode;
+        static bool lastAiming = false;
+        if (nowMs - lastLogMs >= 1000 || mode != lastMode || aiming != lastAiming) {
+            lastLogMs = nowMs;
+            lastMode = mode;
+            lastAiming = aiming;
+            Log::Line("ADS: mode=%s aiming=%s scale=%.3f "
+                      "input=(%.2f %.2f %.2f) output=(%.2f %.2f %.2f)",
+                      cameraunlock::ads::AdsModeValue(mode), aiming ? "yes" : "no",
+                      static_cast<double>(scale),
+                      static_cast<double>(absolute.yaw), static_cast<double>(absolute.pitch),
+                      static_cast<double>(absolute.roll), static_cast<double>(pose.yaw),
+                      static_cast<double>(pose.pitch), static_cast<double>(pose.roll));
+        }
         return aiming;
     }
 
@@ -108,9 +92,5 @@ namespace kcd2_ht::ads
     {
         g_fade.Reset();
         g_entry.Reset();
-        // The observation goes too. A suppressed frame is one the HUD may not
-        // have drawn at all, and holding the last one across it would report the
-        // sights up on the frame tracking comes back.
-        g_sawAimReticle.store(false, std::memory_order_relaxed);
     }
 }

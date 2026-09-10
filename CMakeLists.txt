@@ -48,6 +48,7 @@ set(MOD_SOURCES
     src/dllmain.cpp
     src/headtracking_mod.cpp
     src/ads.cpp
+    src/game_state.cpp
     src/config.cpp
     src/exe_paths.cpp
     src/hotkeys.cpp
@@ -57,6 +58,7 @@ set(MOD_SOURCES
     src/cursor_hook.cpp
     src/builds/build_registry.cpp
     src/builds/steam_offsets.cpp
+    src/builds/gdk_offsets.cpp
 )
 
 add_library(KingdomComeDeliverance2HeadTracking SHARED ${MOD_SOURCES})

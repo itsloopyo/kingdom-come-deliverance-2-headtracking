@@ -115,9 +115,8 @@ void LoadConfig(const std::string& exeDir, Config& out) {
                    "Sensitivity belongs in the tracker app (opentrack mapping curves, the phone "
                    "app settings) so one profile behaves the same in every game.");
     WarnRetiredKey(reader, kTracking, "ShowReticle",
-                   "The mod no longer draws a reticle of its own. It moves the game's own "
-                   "crosshair instead, which carries weapon and interaction state a plain dot "
-                   "cannot. Use MoveCrosshair to turn that off.");
+                   "Use MoveCrosshair for the game's crosshair and [ADS] AdsMode=marker "
+                   "for the additional marker while aiming.");
     WarnRetiredKey(reader, kHotkeys, "RecenterKey",
                    "There is no recenter binding: the tracker app owns the centre. Use the "
                    "Center bind in opentrack or the CENTER button in your phone app.");
@@ -137,18 +136,13 @@ void LoadConfig(const std::string& exeDir, Config& out) {
     out.limit_z_back = ReadFloatChecked(reader, kPosition, "LimitZBack", out.limit_z_back,
                                         0.01f, kMaxPositionLimit);
 
-    // Read as raw text and parsed with marker DISALLOWED. A file written by a
-    // three-slot sibling mod, or by a later release of this one, would
-    // otherwise select a mode this mod does not have; core's parser answers
-    // `paused` for anything it does not recognise, which is the migration
-    // path as well as the typo path.
     {
         const std::string raw = reader.ReadString(kAds, "AdsMode", "");
         if (!raw.empty())
         {
-            out.ads_mode = cameraunlock::ads::ParseAdsMode(raw.c_str(), /*allowMarker=*/false);
+            out.ads_mode = cameraunlock::ads::ParseAdsMode(raw.c_str());
             if (raw != cameraunlock::ads::AdsModeValue(out.ads_mode))
-                Log::Line("WARNING: config [%s] AdsMode = %s is not one of paused/tracked "
+                Log::Line("WARNING: config [%s] AdsMode = %s is not one of paused/marker/tracked "
                           "- using %s.", kAds, raw.c_str(),
                           cameraunlock::ads::AdsModeValue(out.ads_mode));
         }
@@ -279,8 +273,8 @@ void WriteDefaultConfigIfMissing(const std::string& exeDir) {
         "[ADS]\r\n"
         "; What head tracking does while you are aiming a bow or crossbow.\r\n"
         ";   paused  - tracking stands down until you lower the weapon (default).\r\n"
-        ";   tracked - tracking stays live, and the game's own aim reticle keeps\r\n"
-        ";             marking where the shot lands.\r\n"
+        ";   marker  - tracking stays live with an additional aim marker.\r\n"
+        ";   tracked - tracking stays live without the additional marker.\r\n"
         "AdsMode=paused\r\n"
         "\r\n"
         "[Hotkeys]\r\n"

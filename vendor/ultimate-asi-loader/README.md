@@ -12,8 +12,10 @@ Refresh manually with `pixi run update-deps`, then commit.
 - dinput8.dll SHA-256: `22fda9c71eaae02460f311bf3441638340ab591586d78f1de213c4819dcb883c`
 - Fetched at: 2026-08-24T09:09:16.2497125+01:00
 
-`dinput8.dll` is extracted from the upstream asset untouched. It is deployed to
-`<game>/Bin/Win64MasterMasterSteamPGO/dinput8.dll`, beside KingdomCome.exe. WHGame.dll - the module
-that carries the whole engine and the camera code - imports DINPUT8.dll directly,
-and the application directory is searched before System32, so the proxy loads with
-no launch-option changes and forwards every DirectInput export on to the real DLL.
+`dinput8.dll` is extracted from the upstream asset untouched. It is deployed
+beside KingdomCome.exe - `<game>/Bin/Win64MasterMasterSteamPGO/` on Steam and GOG,
+the package `Content` folder on Game Pass. WHGame.dll - the module that carries
+the whole engine and the camera code - imports DINPUT8.dll directly in every one
+of those builds, and the application directory is searched before System32, so the
+proxy loads with no launch-option changes and forwards every DirectInput export on
+to the real DLL.

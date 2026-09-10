@@ -15,6 +15,7 @@
 #include "logging.h"
 #include "pose_guard.h"
 #include "view_injection.h"
+#include "game_state.h"
 
 namespace kcd2_ht::view_hook
 {
@@ -28,6 +29,7 @@ namespace kcd2_ht::view_hook
 
         CViewUpdate_t g_origCViewUpdate = nullptr;
         UpdateFrustum_t g_updateFrustum = nullptr;
+        std::uintptr_t g_moduleBase = 0;
 
         Session* g_session = nullptr;
         UpdateObserver g_onUpdate = nullptr;
@@ -59,6 +61,7 @@ namespace kcd2_ht::view_hook
         bool Suppressed()
         {
             ads::Suppress();
+            cursor::HideAimMarker();
             g_aiming.store(false, std::memory_order_relaxed);
             return false;
         }
@@ -71,10 +74,20 @@ namespace kcd2_ht::view_hook
         // game wanted it with nothing to put back.
         bool InjectHeadPose(void* self)
         {
+            const bool paused = game_state::IsPaused(g_moduleBase);
+            static bool wasPaused = false;
+            if (paused != wasPaused)
+            {
+                Log::Line("Game pause: %s. Head tracking %s.",
+                          paused ? "active" : "inactive",
+                          paused ? "suppressed" : "allowed");
+                wasPaused = paused;
+            }
             if (!Runtime().trackingEnabled.load()) return Suppressed();
 
             const float dt = g_frameClock.Tick();
             if (!g_session->Update(dt)) return Suppressed();
+            if (paused) return Suppressed();
 
             HeadPose pose;
             if (!g_session->GetRotation(pose.yaw, pose.pitch, pose.roll)) return Suppressed();
@@ -101,7 +114,8 @@ namespace kcd2_ht::view_hook
             // the frustum rebuild and the reticle projection - agrees on one
             // pose. In the paused mode this is what fades the head off the
             // camera and holds it off for the length of the aim.
-            g_aiming.store(ads::Apply(pose, GetTickCount64()), std::memory_order_relaxed);
+            g_aiming.store(ads::Apply(pose, GetTickCount64(), game_state::IsAiming(g_moduleBase)),
+                           std::memory_order_relaxed);
 
             const auto& offsets = builds::Offsets();
             auto* cameraBytes = reinterpret_cast<std::uint8_t*>(self) + offsets.kCViewCameraOffset;
@@ -122,7 +136,8 @@ namespace kcd2_ht::view_hook
 
             cursor::SubmitAim(ProjectAim(clean, *camera),
                               g_fovRadians.load(std::memory_order_relaxed),
-                              g_projectionRatio.load(std::memory_order_relaxed));
+                              g_projectionRatio.load(std::memory_order_relaxed),
+                              g_aiming.load(std::memory_order_relaxed));
             return true;
         }
 
@@ -159,6 +174,7 @@ namespace kcd2_ht::view_hook
 
     bool Install(std::uintptr_t moduleBase, Session& session, UpdateObserver onUpdate)
     {
+        g_moduleBase = moduleBase;
         g_session = &session;
         g_onUpdate = onUpdate;
 

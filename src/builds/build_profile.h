@@ -63,6 +63,15 @@ namespace kcd2_ht::builds
         std::uint32_t kRendererGlobalRva;
         std::uint32_t kRendererWidthSlot;
         std::uint32_t kRendererHeightSlot;
+
+        std::uint32_t kGameInterfaceGlobalRva;
+        std::uint32_t kGameFrameworkOffset;
+        std::uint32_t kFrameworkClientActorSlot;
+        std::uint32_t kFrameworkIsPausedSlot;
+        std::uint32_t kPlayerActionActorOffset;
+        std::uint32_t kActionActorExpansionSlot;
+        std::uint32_t kShootingIsAimingRva;
+        std::uint32_t kShootingIsChargingRva;
     };
 
     struct BuildProfile
@@ -77,6 +86,10 @@ namespace kcd2_ht::builds
     inline bool IsComplete(const BuildProfile& profile)
     {
         return profile.Offsets.kCViewUpdateRva != 0
-            && profile.Offsets.kCCameraUpdateFrustumRva != 0;
+            && profile.Offsets.kCCameraUpdateFrustumRva != 0
+            && profile.Offsets.kGameInterfaceGlobalRva != 0
+            && profile.Offsets.kFrameworkIsPausedSlot != 0
+            && profile.Offsets.kShootingIsAimingRva != 0
+            && profile.Offsets.kShootingIsChargingRva != 0;
     }
 }

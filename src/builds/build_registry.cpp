@@ -19,7 +19,8 @@ namespace kcd2_ht::builds
                 return "the game is NEWER than any build this mod knows about - check the "
                        "releases page for an updated mod";
             case FingerprintMismatch::Older:
-                return "the game is OLDER than the newest profile - let Steam finish updating";
+                return "the game is OLDER than the newest profile - let your store (Steam, GOG "
+                       "or the Xbox app) finish updating";
             case FingerprintMismatch::Differs:
                 return "same build date but a different size or checksum - a repacked or "
                        "modified WHGame.dll, which this mod will not engage on";
@@ -29,6 +30,7 @@ namespace kcd2_ht::builds
     }
 
     const BuildProfile* const kKnownProfiles[] = {
+        &kGdkProfile_20260622,
         &kSteamProfile_20260619,
     };
     const int kKnownProfileCount = static_cast<int>(sizeof(kKnownProfiles) / sizeof(kKnownProfiles[0]));

@@ -9,14 +9,8 @@
   "delivery_mode": "manifest",
 
   "files": [
-    {
-      "source": "vendor/ultimate-asi-loader/dinput8.dll",
-      "target": "Bin/Win64MasterMasterSteamPGO/dinput8.dll"
-    },
-    {
-      "source": "plugins/KingdomComeDeliverance2HeadTracking.asi",
-      "target": "Bin/Win64MasterMasterSteamPGO/KingdomComeDeliverance2HeadTracking.asi"
-    }
+    { "source": "vendor/ultimate-asi-loader/dinput8.dll", "target": "dinput8.dll", "anchor": "exe_dir" },
+    { "source": "plugins/KingdomComeDeliverance2HeadTracking.asi", "target": "KingdomComeDeliverance2HeadTracking.asi", "anchor": "exe_dir" }
   ],
 
   "runtime_requirements": [],

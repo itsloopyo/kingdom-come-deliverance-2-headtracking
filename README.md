@@ -13,7 +13,7 @@ Move the in-game view with your real head while the mouse keeps the aim, no VR h
 
 ## Requirements
 
-- **The game** - [Kingdom Come: Deliverance II](https://store.steampowered.com/app/1771300/) on Steam. Other stores are untested; the mod stays dormant rather than misbehave on a build it does not recognize.
+- **The game** - [Kingdom Come: Deliverance II](https://store.steampowered.com/app/1771300/) on Steam, or the Xbox Game Pass / Microsoft Store version. Each store ships its own build of the game and the mod carries a profile for each; on a build it does not recognize it stays dormant rather than misbehave.
 - **A tracking source** - a webcam through [OpenTrack](https://github.com/opentrack/opentrack), a VR headset, TrackIR, Tobii, or a phone app that speaks the OpenTrack UDP protocol.
 - **Windows 10 or 11, 64-bit.**
 
@@ -36,14 +36,32 @@ $env:KINGDOM_COME_DELIVERANCE_2_PATH = "D:\Games\KingdomComeDeliverance2"
 .\install.cmd "D:\Games\KingdomComeDeliverance2"
 ```
 
+Give it the game's own top folder, not the folder the executable is in. On
+Steam and GOG that is the folder containing
+`Bin\Win64MasterMasterSteamPGO\KingdomCome.exe`; on Game Pass it is the
+`Content` folder, which holds `KingdomCome.exe` directly.
+
 ### Manual Installation
 
-Copy two files into `<game>\Bin\Win64MasterMasterSteamPGO`, the folder holding `KingdomCome.exe`:
+Copy two files in beside `KingdomCome.exe`:
 
 ```
-Bin\Win64MasterMasterSteamPGO\dinput8.dll                                  (from vendor\ultimate-asi-loader\)
-Bin\Win64MasterMasterSteamPGO\KingdomComeDeliverance2HeadTracking.asi      (from plugins\)
+dinput8.dll                                  (from vendor\ultimate-asi-loader\)
+KingdomComeDeliverance2HeadTracking.asi      (from plugins\)
 ```
+
+The stores put `KingdomCome.exe` in different places, and the loader only looks
+in the folder the executable is in, so this is the one detail worth checking
+before you copy:
+
+| Store | Where the two files go |
+|-------|------------------------|
+| Steam, GOG | `<game>\Bin\Win64MasterMasterSteamPGO\` |
+| Xbox Game Pass / Microsoft Store | `<XboxGames>\Kingdom Come- Deliverance II\Content\` |
+
+The installer ZIP mirrors the Steam layout, so its files sit under
+`Bin\Win64MasterMasterSteamPGO\` inside the archive. For a Game Pass install, take
+them out of that folder and drop them straight into `Content`.
 
 `dinput8.dll` is Ultimate ASI Loader. `WHGame.dll` imports DirectInput 8 directly and the game folder is searched before System32, so the loader picks itself up with no launch options. If you already run another ASI loader there, keep yours and copy only the `.asi`.
 
@@ -90,6 +108,9 @@ Two equivalent binding sets, use whichever your keyboard has:
 | Toggle yaw mode (world / local) | `Page Down` | `Ctrl+Shift+H` |
 | Cycle ADS mode                  | `Insert`    | `Ctrl+Shift+U` |
 
+Head tracking pauses while the game's pause menu is open, including when opened
+with `Backspace`. Closing the menu restores tracking if you have it enabled.
+
 `Page Up` / `Ctrl+Shift+G` cycles tracking mode:
 
 1. Normal head-tracked gameplay
@@ -100,18 +121,17 @@ Two equivalent binding sets, use whichever your keyboard has:
 `Page Down` / `Ctrl+Shift+H` switches yaw between world-locked (the default, horizon-stable) and camera-local, which follows the camera's current up-axis.
 
 `Insert` / `Ctrl+Shift+U` cycles what happens when you aim a bow or crossbow.
-Both start the same way - raising the sights swings the view onto the point the
-reticle was marking, so your shot lands where you had it lined up - and they
-differ in what happens for the rest of the aim:
+Raising the sights eases the view onto the weapon's aim direction. The modes
+then control head tracking for the rest of the aim:
 
-1. **Tracking paused** (default) - the game keeps the camera for as long as you
-   are aiming. The sight picture is exactly the game's, and head movement does
-   nothing until you lower the weapon.
-2. **Tracking on, no aim marker** - head tracking carries on from the snapped
-   position, and the game's own aim reticle keeps marking where the shot lands,
-   so nothing extra is drawn over the top of it. That reticle is authoritative:
-   this mod moves it onto the real impact point every frame, so when it and the
-   arrow appear to disagree it is the reticle that is right.
+1. **Tracking paused** (default) - head yaw, pitch and lean pause while aiming.
+2. **Tracking on, with aim marker** - tracking continues from the pose where
+   aiming began, with a small cross marking the weapon's aim direction.
+3. **Tracking on, no aim marker** - the same tracking, without the added cross.
+
+Head roll remains active in all three modes. Lowering the weapon restores
+normal tracking. The marker shows aim direction, without compensating for
+projectile drop.
 
 The choice is saved to `HeadTracking.ini`, so it survives a restart. This mod
 draws no on-screen text of its own, so the mode you switched to is named in
@@ -121,7 +141,7 @@ Every press is named in `HeadTracking.log`.
 
 ## Configuration
 
-`HeadTracking.ini` is written next to `KingdomCome.exe`, in `<game>\Bin\Win64MasterMasterSteamPGO`, the first time you launch with the mod installed.
+`HeadTracking.ini` is written next to `KingdomCome.exe` the first time you launch with the mod installed, in the same folder you copied the `.asi` into.
 
 ```ini
 [HeadTracking]
@@ -159,11 +179,16 @@ LimitYDown=0.20
 LimitZ=0.40
 LimitZBack=0.10
 
+[ADS]
+; paused, marker, or tracked. Insert cycles these while playing.
+AdsMode=paused
+
 [Hotkeys]
-; Windows virtual-key codes. Ctrl+Shift+Y / G / H work as alternatives.
+; Windows virtual-key codes. Ctrl+Shift+Y / G / H / U work as alternatives.
 ToggleKey=0x23
 PositionKey=0x21
 YawModeKey=0x22
+AdsModeKey=0x2D
 ```
 
 There is deliberately no sensitivity or axis-inversion setting. Shape the pose in your tracker app instead, so one profile behaves the same in every game.
@@ -174,8 +199,8 @@ Everything the mod does is written to `HeadTracking.log` next to `KingdomCome.ex
 
 **Mod not loading**
 
-- Check `HeadTracking.log` exists. If it does not, the ASI loader is not loading. Confirm `dinput8.dll` and the `.asi` are both in `Bin\Win64MasterMasterSteamPGO`.
-- If the log says "staying dormant", the mod did not recognize your `WHGame.dll`. The same line says whether the game is newer or older than the builds it knows about. Open an issue quoting it.
+- Check `HeadTracking.log` exists. If it does not, the ASI loader is not loading. Confirm `dinput8.dll` and the `.asi` are both in the folder `KingdomCome.exe` is in - `Bin\Win64MasterMasterSteamPGO` on Steam and GOG, `Content` on Game Pass. Neither belongs in the game's top folder.
+- If the log says "staying dormant", the mod did not recognize your `WHGame.dll`. The same line says whether the game is newer or older than the builds it knows about. Open an issue quoting it. On a working install the line above it names the profile that matched, `steam-win64-...` or `gdk-win64-...` according to where you bought the game.
 
 **No tracking response**
 

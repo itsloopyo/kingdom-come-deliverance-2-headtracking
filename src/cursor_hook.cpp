@@ -6,7 +6,12 @@
 
 #include <cameraunlock/hooks/hook_manager.h>
 
+#define CAMERAUNLOCK_DX12_OVERLAY_IMPLEMENTATION
+#define CAMERAUNLOCK_AIM_MARKER_DX12_IMPLEMENTATION
+#include <cameraunlock/rendering/aim_marker_dx12.h>
+
 #include "ads.h"
+
 #include "builds/build_registry.h"
 #include "hook_install.h"
 #include "logging.h"
@@ -42,6 +47,7 @@ namespace kcd2_ht::cursor
         };
 
         AimState g_aim;
+        cameraunlock::rendering::AimMarkerDX12 g_marker;
 
         // One frame at 30 fps is 33 ms. Loose enough not to blink on a stutter,
         // tight enough that the cursor is back under the game's control by the
@@ -87,18 +93,6 @@ namespace kcd2_ht::cursor
             return returnRva == offsets.kCursorCentreReturnRva
                 || returnRva == offsets.kCombatCursorReturnRva
                 || returnRva == offsets.kAimedCursorReturnRva;
-        }
-
-        // The one call site that means the sights are up. The HUD reaches it
-        // only when it has decided to put `CursorCross` at a COMPUTED aim
-        // point; the other branch of that same `if` hides the element, and
-        // the centre site parks it at the middle of the screen for ordinary
-        // exploration. The combat site is the melee cursor and is not an aim
-        // state. So this is the game telling us, in its own HUD code and once
-        // per frame, that a ranged weapon is drawn.
-        bool CallSiteIsRangedAim(std::uintptr_t returnRva)
-        {
-            return returnRva == builds::Offsets().kAimedCursorReturnRva;
         }
 
         bool ScreenSize(float& width, float& height)
@@ -175,12 +169,6 @@ namespace kcd2_ht::cursor
             const std::uintptr_t returnRva =
                 reinterpret_cast<std::uintptr_t>(_ReturnAddress()) - g_moduleBase;
 
-            // Reported before anything else here can decline, and reported
-            // whatever the ADS mode is: the mode says what tracking does with
-            // the sights, this says the sights are up, and the paused mode
-            // needs the second while doing nothing about the first.
-            if (CallSiteIsRangedAim(returnRva)) ads::NoteAimReticle(GetTickCount64());
-
             float dx = 0.0f, dy = 0.0f;
             if (g_moveCrosshair && pos != nullptr && CallSiteIsCursor(returnRva)
                     && AimOffset(dx, dy))
@@ -203,6 +191,7 @@ namespace kcd2_ht::cursor
     {
         g_moduleBase = moduleBase;
         g_moveCrosshair = moveCrosshair;
+        g_marker.SetLogger([](const char* line) { Log::Line("%s", line); });
 
         const auto& offsets = builds::Offsets();
         void* target = reinterpret_cast<void*>(moduleBase + offsets.kSetCursorPositionRva);
@@ -226,10 +215,15 @@ namespace kcd2_ht::cursor
         else
             Log::Line("HUD cursor hooked at RVA 0x%08X (renderer not up yet; size read on first "
                       "use).", offsets.kSetCursorPositionRva);
+        if (ads::Mode() == ads::AdsMode::Marker) PrepareAimMarker();
         return true;
     }
 
-    void SubmitAim(const AimProjection& aim, float fovRadians, float projectionRatio)
+    void PrepareAimMarker() { g_marker.Ensure(); }
+
+    void HideAimMarker() { g_marker.Publish(false, 0.0f, 0.0f); }
+
+    void SubmitAim(const AimProjection& aim, float fovRadians, float projectionRatio, bool aiming)
     {
         g_aim.tanRight.store(aim.tanRight, std::memory_order_relaxed);
         g_aim.tanUp.store(aim.tanUp, std::memory_order_relaxed);
@@ -237,5 +231,13 @@ namespace kcd2_ht::cursor
         g_aim.fovRadians.store(fovRadians, std::memory_order_relaxed);
         g_aim.projectionRatio.store(projectionRatio, std::memory_order_relaxed);
         g_aim.stampMs.store(GetTickCount64(), std::memory_order_relaxed);
+
+        if (ads::Mode() != ads::AdsMode::Marker || !aiming || !aim.inFront
+                || !IsPlausibleFrustum(fovRadians, projectionRatio)) {
+            HideAimMarker();
+            return;
+        }
+        const ScreenPoint point = ToScreen(aim, 2.0f, 2.0f, fovRadians, projectionRatio);
+        g_marker.Publish(true, point.x - 1.0f, 1.0f - point.y);
     }
 }

@@ -39,6 +39,14 @@ namespace kcd2_ht::builds
             /* kRendererGlobalRva            */ 0x0492D908u,
             /* kRendererWidthSlot            */ 0x00000238u,
             /* kRendererHeightSlot           */ 0x00000230u,
+            /* kGameInterfaceGlobalRva       */ 0x0549D388u,
+            /* kGameFrameworkOffset          */ 0x00000008u,
+            /* kFrameworkClientActorSlot     */ 0x00000200u,
+            /* kFrameworkIsPausedSlot        */ 0x00000078u,
+            /* kPlayerActionActorOffset      */ 0x00000280u,
+            /* kActionActorExpansionSlot     */ 0x00000070u,
+            /* kShootingIsAimingRva           */ 0x014DBD20u,
+            /* kShootingIsChargingRva         */ 0x013453D4u,
         },
     };
 }

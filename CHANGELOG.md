@@ -1,5 +1,26 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Added support for the Xbox Game Pass / Microsoft Store version of the game.
+  It ships its own build, so it gets its own build profile; the Steam profile
+  is untouched and a player on either store matches their own entry.
+- The installer and the manual instructions now put the loader and the mod
+  beside `KingdomCome.exe` wherever the store keeps it. The Game Pass package
+  has no `Bin\Win64MasterMasterSteamPGO`; its executable sits directly in the
+  package `Content` folder, and so do `HeadTracking.ini` and
+  `HeadTracking.log`.
+
+### Fixed
+
+- Fixed a launcher install on the Game Pass version putting the loader and the
+  mod in a folder nothing reads. The package now anchors both files to the
+  directory the game's executable is in rather than to a fixed path under the
+  game root, which is the same folder on Steam and the correct one on Game
+  Pass. A Steam install lands exactly where it did before.
+
 ## [0.0.0] - 2026-08-24
 
 ### Added

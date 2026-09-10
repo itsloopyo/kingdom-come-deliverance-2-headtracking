@@ -19,6 +19,7 @@ add_executable(kcd_tests
     ${CMAKE_SOURCE_DIR}/src/ads.cpp
     ${CMAKE_SOURCE_DIR}/src/exe_paths.cpp
     ${CMAKE_SOURCE_DIR}/src/builds/steam_offsets.cpp
+    ${CMAKE_SOURCE_DIR}/src/builds/gdk_offsets.cpp
 )
 
 target_include_directories(kcd_tests PRIVATE
@@ -33,3 +34,7 @@ if(MSVC)
 endif()
 
 add_test(NAME kcd_tests COMMAND kcd_tests)
+if(WIN32)
+    add_test(NAME game_installs_tests COMMAND powershell -NoProfile -ExecutionPolicy Bypass
+        -File "${CMAKE_CURRENT_SOURCE_DIR}/game_installs_tests.ps1")
+endif()

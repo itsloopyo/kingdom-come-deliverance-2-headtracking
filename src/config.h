@@ -37,10 +37,6 @@ struct Config {
     // head turns. Off leaves the HUD completely untouched.
     bool move_crosshair = true;
 
-    // What head tracking does while the sights are up. Two slots here -
-    // `paused` and `tracked` - because KCD2 draws its own aim reticle at the
-    // point the shot lands and this mod already moves it, so there is no
-    // `marker` mode to select. Anything else in the file reads as `paused`.
     cameraunlock::ads::AdsMode ads_mode = cameraunlock::ads::kDefaultAdsMode;
 
     bool position_enabled = true;
