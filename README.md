@@ -19,7 +19,7 @@ Move the in-game view with your real head while the mouse keeps the aim, no VR h
 
 ## Installation
 
-1. Download the installer ZIP from the [Releases page](https://github.com/itsloopyo/kingdom-come-deliverance-2/releases).
+1. Download the installer ZIP from the [Releases page](https://github.com/itsloopyo/kingdom-come-deliverance-2-headtracking/releases).
 2. Extract it anywhere.
 3. Double-click `install.cmd`.
 4. Configure OpenTrack (or your phone app) to output UDP to `127.0.0.1:4242`.
@@ -233,7 +233,7 @@ Run `uninstall.cmd`. This removes the mod DLLs. The ASI loader is only removed i
 Needs CMake and Visual Studio. The build has no dependency on a game install; it produces the installer ZIP on a clean checkout of a machine that does not own the game.
 
 ```powershell
-git clone --recursive https://github.com/itsloopyo/kingdom-come-deliverance-2
+git clone --recursive https://github.com/itsloopyo/kingdom-come-deliverance-2-headtracking
 cd kingdom-come-deliverance-2
 pixi run package
 ```
