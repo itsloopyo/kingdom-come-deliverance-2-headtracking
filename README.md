@@ -13,7 +13,7 @@ Move the in-game view with your real head while the mouse keeps the aim, no VR h
 
 ## Requirements
 
-- **The game** - [Kingdom Come: Deliverance II](https://store.steampowered.com/app/1771300/) on Steam, or the Xbox Game Pass / Microsoft Store version. Each store ships its own build of the game and the mod carries a profile for each; on a build it does not recognize it stays dormant rather than misbehave.
+- **The game** - [Kingdom Come: Deliverance II](https://store.steampowered.com/app/1771300/) on Steam, or the Xbox Game Pass version. Each store ships its own build of the game and the mod carries a profile for each; on a build it does not recognize it stays dormant rather than misbehave.
 - **A tracking source** - a webcam through [OpenTrack](https://github.com/opentrack/opentrack), a VR headset, TrackIR, Tobii, or a phone app that speaks the OpenTrack UDP protocol.
 - **Windows 10 or 11, 64-bit.**
 
@@ -38,7 +38,7 @@ $env:KINGDOM_COME_DELIVERANCE_2_PATH = "D:\Games\KingdomComeDeliverance2"
 
 Give it the game's own top folder, not the folder the executable is in. On
 Steam and GOG that is the folder containing
-`Bin\Win64MasterMasterSteamPGO\KingdomCome.exe`; on Game Pass it is the
+`Bin\Win64MasterMasterSteamPGO\KingdomCome.exe`; on Xbox Game Pass it is the
 `Content` folder, which holds `KingdomCome.exe` directly.
 
 ### Manual Installation
@@ -57,10 +57,10 @@ before you copy:
 | Store | Where the two files go |
 |-------|------------------------|
 | Steam, GOG | `<game>\Bin\Win64MasterMasterSteamPGO\` |
-| Xbox Game Pass / Microsoft Store | `<XboxGames>\Kingdom Come- Deliverance II\Content\` |
+| Xbox Game Pass | `<XboxGames>\Kingdom Come- Deliverance II\Content\` |
 
 The installer ZIP mirrors the Steam layout, so its files sit under
-`Bin\Win64MasterMasterSteamPGO\` inside the archive. For a Game Pass install, take
+`Bin\Win64MasterMasterSteamPGO\` inside the archive. For an Xbox Game Pass install, take
 them out of that folder and drop them straight into `Content`.
 
 `dinput8.dll` is Ultimate ASI Loader. `WHGame.dll` imports DirectInput 8 directly and the game folder is searched before System32, so the loader picks itself up with no launch options. If you already run another ASI loader there, keep yours and copy only the `.asi`.
@@ -199,7 +199,7 @@ Everything the mod does is written to `HeadTracking.log` next to `KingdomCome.ex
 
 **Mod not loading**
 
-- Check `HeadTracking.log` exists. If it does not, the ASI loader is not loading. Confirm `dinput8.dll` and the `.asi` are both in the folder `KingdomCome.exe` is in - `Bin\Win64MasterMasterSteamPGO` on Steam and GOG, `Content` on Game Pass. Neither belongs in the game's top folder.
+- Check `HeadTracking.log` exists. If it does not, the ASI loader is not loading. Confirm `dinput8.dll` and the `.asi` are both in the folder `KingdomCome.exe` is in - `Bin\Win64MasterMasterSteamPGO` on Steam and GOG, `Content` on Xbox Game Pass. Neither belongs in the game's top folder.
 - If the log says "staying dormant", the mod did not recognize your `WHGame.dll`. The same line says whether the game is newer or older than the builds it knows about. Open an issue quoting it. On a working install the line above it names the profile that matched, `steam-win64-...` or `gdk-win64-...` according to where you bought the game.
 
 **No tracking response**
