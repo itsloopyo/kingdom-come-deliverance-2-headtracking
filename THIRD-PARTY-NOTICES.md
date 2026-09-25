@@ -19,7 +19,7 @@ Kingdom Come: Deliverance II.
 | injector | `f7fd18f` (inside Ultimate ASI Loader v9.7.2) | zlib | Compiled into the vendored dinput8.dll |
 | miniz | 3.0.0 (inside Ultimate ASI Loader v9.7.2) | MIT | Compiled into the vendored dinput8.dll |
 | MinHook | v1.3.3 (commit `9fbd087`) | BSD-2-Clause | Compiled into `KingdomComeDeliverance2HeadTracking.asi` |
-| cameraunlock-core | `f92be69967d9a7afc9eba55dff8fea4ec55e064c` | MIT | Compiled into `KingdomComeDeliverance2HeadTracking.asi` |
+| cameraunlock-core | `befb88eef8bf0c8238d49b1e4d709578052d5590` | MIT | Compiled into `KingdomComeDeliverance2HeadTracking.asi` |
 | OpenTrack | n/a | ISC | Not bundled; UDP protocol interoperability only |
 
 ---
@@ -255,7 +255,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ## cameraunlock-core
 
-- **Version:** `f92be69967d9a7afc9eba55dff8fea4ec55e064c`
+- **Version:** `befb88eef8bf0c8238d49b1e4d709578052d5590`
 - **License:** `MIT`
 - **Upstream:** https://github.com/itsloopyo/cameraunlock-core
 - **Usage:** Supplies the shared pose pipeline (UDP intake, interpolation,
