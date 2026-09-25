@@ -131,12 +131,11 @@ there.
 
 ### Aiming down sights
 
-Head tracking stays on while you aim a bow or crossbow. The mod moves only the
-view: the aim stays on your mouse or controller, so with your head turned you
-are looking past the weapon rather than down it.
+Head tracking stays on while you aim a bow or crossbow: turning your head still
+turns the view.
 
-By default the lean eases out while the sights are up, because it would move
-your eye off them, and eases back in when you lower the weapon. `Insert` /
+By default the lean eases out while the sights are up and eases back in when
+you lower the weapon. `Insert` /
 `Ctrl+Shift+U` switches to **true free look**, where the lean stays in full
 while you aim. It is off by default. The mod saves the mode you pick, so it
 holds the next time you start the game.
@@ -225,6 +224,20 @@ TrueFreeLookKey=Insert, Ctrl+Shift+U
 ```
 <!-- /cameraunlock:config -->
 
+These settings from earlier versions are gone:
+
+- `MoveCrosshair`. The game's crosshair now always follows your aim, and no
+  setting turns that off. A file that set it to `false` converts with that
+  value logged as dropped.
+- `[ADS] AdsMode` and `[Hotkeys] AdsModeKey`. The paused, marker and tracked
+  aiming modes are gone, including paused, which was the default. Head tracking
+  now carries on while you aim and the mod draws no aim marker. `Insert` /
+  `Ctrl+Shift+U` toggle true free look instead. The conversion logs both keys
+  as not carried.
+- A file that still has the older `ShowReticle` gets a log line telling you to
+  use `MoveCrosshair`. That advice is out of date, since `MoveCrosshair` is gone
+  as well.
+
 The mod saves the tracking mode (`Page Up`), the yaw mode (`Page Down`) and
 true free look (`Insert`) to this file the moment you change them, so each one
 comes back the next time you start the game. Turning head tracking on or off
@@ -259,10 +272,6 @@ Everything the mod does is written to `HeadTracking.log` next to `KingdomCome.ex
 - The view drifts or sits off-center: center in your tracker app, the mod has no center of its own.
 - Yaw feels wrong at extreme up or down angles: toggle world-locked and camera-local yaw with `Page Down`. World-locked is horizon-stable, camera-local follows the camera's up-axis and leans the view on steeply pitched turns.
 - An axis moves the view the wrong way: fix the axis direction in your tracker profile. The mod exposes no inversion setting on purpose, so one tracker profile stays correct across every game.
-
-**The weapon is off to one side when I aim**
-
-- Your head is turned: the weapon stays on your aim and you are looking past it. Turn back to it, or move your aim to where you are looking.
 
 **Leaning still moves the view while I aim**
 

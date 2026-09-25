@@ -39,8 +39,7 @@
   the next time you start the game. `End` still lasts for the session only.
 - `[ADS] AdsMode` is no longer read, and the paused, marker and tracked modes
   it chose between are gone (abebb77).
-- `[Hotkeys] AdsModeKey` is no longer read. `Insert` and `Ctrl+Shift+U` now
-  toggle true free look (abebb77).
+- `[Hotkeys] AdsModeKey` is no longer read (abebb77).
 - Head tracking now carries straight on while you aim a bow or crossbow.
   Raising the sights no longer moves the view, and head rotation is never
   paused or measured from where the aim began. Only the lean eases out while
@@ -54,7 +53,10 @@
   before and the two keys are ignored.
 - `MoveCrosshair`, the setting that left the game's crosshair at screen
   centre. The crosshair now always follows your aim, and a file that turned it
-  off converts with that setting logged as not carried.
+  off converts with that setting logged as not carried. If your file still has
+  the long-retired `ShowReticle`, the conversion logs a warning that tells you
+  to use `MoveCrosshair` instead. That advice is out of date: `MoveCrosshair`
+  is gone too.
 
 ### Fixed
 
