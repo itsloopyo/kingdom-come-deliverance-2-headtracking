@@ -13,5 +13,10 @@ namespace kcd2_ht
     std::wstring DirectoryOf(const std::wstring& path);
     std::string  DirectoryOf(const std::string& path);
 
+    // The process's working directory as a full path, with no trailing
+    // separator. The config owner refuses a relative path, so "." will not do.
+    std::wstring WorkingDirectory();
+
+    // Always a full path: the working directory when the exe path cannot be read.
     std::wstring ExeDirectory();
 }
