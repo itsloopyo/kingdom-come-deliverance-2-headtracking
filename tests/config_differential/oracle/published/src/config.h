@@ -1,8 +1,8 @@
 #pragma once
 
+#include <cameraunlock/ads/ads_mode.h>
 #include <cameraunlock/data/position_settings.h>
 #include <cameraunlock/math/smoothing_utils.h>
-#include <cameraunlock/tracking/tracking_mode.h>
 
 #include <string>
 
@@ -19,6 +19,7 @@ struct Config {
     int toggle_key = 0x23;    // End
     int position_key = 0x21;  // Page Up
     int yaw_mode_key = 0x22;  // Page Down
+    int ads_mode_key = 0x2D;  // Insert
 
     // Two smoothing parameters, picked per connection from the packet source
     // address. Both cover rotation and position. There is no third knob and no
@@ -36,6 +37,8 @@ struct Config {
     // head turns. Off leaves the HUD completely untouched.
     bool move_crosshair = true;
 
+    cameraunlock::ads::AdsMode ads_mode = cameraunlock::ads::kDefaultAdsMode;
+
     bool position_enabled = true;
     float limit_x = cameraunlock::PositionSettings{}.limit_x;
     float limit_y = cameraunlock::PositionSettings{}.limit_y;
@@ -50,14 +53,21 @@ struct Config {
 
 // Both take the directory holding KingdomCome.exe; the INI sits beside it.
 // Keys absent from the file keep the defaults above, so a partial INI is valid.
-// LoadConfig reads through the frozen reader in legacy_config/, which validates
-// every value it reads: a key that is out of range or not a number keeps its
-// default and the substitution is logged, so nothing here is ever NaN,
-// infinite, or outside the range its consumer can take.
+// LoadConfig validates every value it reads: a key that is out of range or not
+// a number keeps its default and the substitution is logged, so nothing here is
+// ever NaN, infinite, or outside the range its consumer can take.
 void LoadConfig(const std::string& exeDir, Config& out);
 void WriteDefaultConfigIfMissing(const std::string& exeDir);
 
-// The tracking mode the session starts in.
-cameraunlock::TrackingMode StartupMode(const Config& config);
+// Writes @p mode back to the INI's [ADS] AdsMode key, so a mode picked with
+// the hotkey survives a restart. It is the player's choice and start-up must
+// not silently discard it.
+//
+// Rewrites that ONE line rather than regenerating the file: everything else
+// in there is the player's, including comments they may have added, and a
+// regenerate would quietly reset any key this build does not know about.
+// Failure is logged and otherwise ignored - the mode still took effect for
+// this session, and a read-only game folder is not worth refusing the key over.
+void PersistAdsMode(const std::string& exeDir, cameraunlock::ads::AdsMode mode);
 
 }

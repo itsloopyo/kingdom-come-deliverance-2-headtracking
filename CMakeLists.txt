@@ -52,6 +52,8 @@ set(MOD_SOURCES
     src/config.cpp
     src/exe_paths.cpp
     src/hotkeys.cpp
+    src/hotkey_bindings.cpp
+    src/legacy_config/legacy_config.cpp
     src/view_hook.cpp
     src/view_injection.cpp
     src/aim_projection.cpp

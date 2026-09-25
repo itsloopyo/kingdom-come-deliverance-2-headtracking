@@ -1,7 +1,11 @@
 #include "hotkeys.h"
 
+#include <functional>
+#include <vector>
+
 #include <cameraunlock/input/chord_hotkeys.h>
 
+#include "hotkey_bindings.h"
 #include "logging.h"
 
 namespace kcd2_ht
@@ -10,17 +14,23 @@ namespace kcd2_ht
     {
         using cameraunlock::TrackingMode;
         using cameraunlock::input::ChordGuarded;
+        using cameraunlock::input::HotkeyPoller;
+        using cameraunlock::input::KeyBinding;
+        using cameraunlock::input::KeyModifiers;
         using cameraunlock::input::NavGuarded;
 
-        // Ctrl+Shift+<letter> from the T/Y/U/G/H/J block, in the order AGENTS.md
-        // fixes so the same action lands on the same chord in every mod.
-        // Ctrl+Shift+T is left free: it was the recenter chord before mods
-        // stopped keeping a centre, so reusing it would fire on muscle memory.
-        constexpr int kVkY = 0x59;
-        constexpr int kVkG = 0x47;
-        constexpr int kVkH = 0x48;
-
         constexpr int kPollIntervalMs = 16;
+
+        // A nav-cluster binding is suppressed while Ctrl+Shift is held so the
+        // chord path is the sole trigger for a Ctrl+Shift+<nav> press.
+        void Register(HotkeyPoller& poller, const std::vector<KeyBinding>& bindings,
+                      const std::function<void()>& action)
+        {
+            for (const KeyBinding& binding : bindings)
+                poller.AddHotkey(binding.vk, binding.modifiers == KeyModifiers::kNone
+                                                 ? NavGuarded(action)
+                                                 : ChordGuarded(action));
+        }
 
         void ToggleTracking()
         {
@@ -57,17 +67,11 @@ namespace kcd2_ht
     std::unique_ptr<cameraunlock::input::HotkeyPoller> StartHotkeys(Session& session,
                                                                     const Config& config)
     {
-        auto poller = std::make_unique<cameraunlock::input::HotkeyPoller>();
-
-        // Nav-cluster defaults. Suppressed while Ctrl+Shift is held so the chord
-        // path is the sole trigger for a Ctrl+Shift+<nav> press.
-        poller->AddHotkey(config.toggle_key, NavGuarded([] { ToggleTracking(); }));
-        poller->AddHotkey(config.position_key, NavGuarded([&session] { CycleTrackingMode(session); }));
-        poller->AddHotkey(config.yaw_mode_key, NavGuarded([] { ToggleYawMode(); }));
-
-        poller->AddHotkey(kVkY, ChordGuarded([] { ToggleTracking(); }));
-        poller->AddHotkey(kVkG, ChordGuarded([&session] { CycleTrackingMode(session); }));
-        poller->AddHotkey(kVkH, ChordGuarded([] { ToggleYawMode(); }));
+        auto poller = std::make_unique<HotkeyPoller>();
+        const HotkeyBindings bindings = BindingsFor(config);
+        Register(*poller, bindings.toggle, [] { ToggleTracking(); });
+        Register(*poller, bindings.cycle_tracking_mode, [&session] { CycleTrackingMode(session); });
+        Register(*poller, bindings.yaw_mode, [] { ToggleYawMode(); });
 
         poller->Start(kPollIntervalMs);
         return poller;

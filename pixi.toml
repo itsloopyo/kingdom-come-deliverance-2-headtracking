@@ -23,7 +23,8 @@ build = { cmd = "cmake --build build --config Release", depends-on = ["setup"] }
 build-debug = { cmd = "cmake --build build --config Debug", depends-on = ["setup"] }
 
 # Characterization tests for the parts of the provider that are decidable
-# without a game process. Same build the DLL comes out of, so CI runs it too.
+# without a game process, and the config differential test
+# (tests/config_differential). Same build the DLL comes out of, so CI runs it too.
 test = { cmd = "ctest --test-dir build -C Release --output-on-failure", depends-on = ["build"] }
 
 # Refresh the vendored Ultimate ASI Loader under vendor/ultimate-asi-loader.
@@ -49,8 +50,9 @@ clean-all = { cmd = """
     powershell -Command "foreach ($d in @('build','release')) { if (Test-Path $d) { Remove-Item $d -Recurse -Force } }; Write-Host 'All build artifacts cleaned' -ForegroundColor Green"
 """ }
 
-# Package release ZIPs (installer + nexus).
-package = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1", depends-on = ["build"] }
+# Package release ZIPs (installer + nexus). Depends on test, so the config
+# differential test gates every package, CI's included.
+package = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1", depends-on = ["test"] }
 
 # Build + deploy to every installed copy of the game (dev loop). Steam, GOG and
 # Game Pass each get the ASI and the loader, in the directory their own

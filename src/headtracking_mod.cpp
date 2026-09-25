@@ -22,7 +22,6 @@ namespace kcd2_ht
 {
     namespace
     {
-        using cameraunlock::TrackingMode;
         namespace hooks = cameraunlock::hooks;
 
         // The engine and the whole game live in this one module; KingdomCome.exe
@@ -191,8 +190,7 @@ namespace kcd2_ht
                 g_config.limit_x, g_config.limit_y, g_config.limit_y_down,
                 g_config.limit_z, g_config.limit_z_back,
                 g_config.local_smoothing, g_config.remote_smoothing));
-            g_session->SetMode(g_config.position_enabled ? TrackingMode::RotationAndPosition
-                                                         : TrackingMode::RotationOnly);
+            g_session->SetMode(StartupMode(g_config));
 
             Runtime().trackingEnabled.store(g_config.enable_on_startup);
             Runtime().worldSpaceYaw.store(g_config.world_space_yaw);

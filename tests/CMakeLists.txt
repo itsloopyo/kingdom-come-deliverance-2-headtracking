@@ -15,6 +15,7 @@ add_executable(kcd_tests
     ${CMAKE_SOURCE_DIR}/src/view_injection.cpp
     ${CMAKE_SOURCE_DIR}/src/aim_projection.cpp
     ${CMAKE_SOURCE_DIR}/src/config.cpp
+    ${CMAKE_SOURCE_DIR}/src/legacy_config/legacy_config.cpp
     ${CMAKE_SOURCE_DIR}/src/ads.cpp
     ${CMAKE_SOURCE_DIR}/src/exe_paths.cpp
     ${CMAKE_SOURCE_DIR}/src/builds/steam_offsets.cpp
@@ -33,6 +34,7 @@ if(MSVC)
 endif()
 
 add_test(NAME kcd_tests COMMAND kcd_tests)
+add_subdirectory(config_differential)
 if(WIN32)
     add_test(NAME game_installs_tests COMMAND powershell -NoProfile -ExecutionPolicy Bypass
         -File "${CMAKE_CURRENT_SOURCE_DIR}/game_installs_tests.ps1")
