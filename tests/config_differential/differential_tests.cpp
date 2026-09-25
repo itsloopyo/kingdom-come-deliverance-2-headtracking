@@ -19,8 +19,8 @@
 //
 //   - [ADS] AdsMode is no longer read, and the paused / marker / tracked cycle it
 //     seeded is gone. abebb77.
-//   - [Hotkeys] AdsModeKey is no longer read, and neither it nor Ctrl+Shift+U is
-//     registered. abebb77. Insert and Ctrl+Shift+U now toggle true free look.
+//   - [Hotkeys] AdsModeKey is no longer read, and the cycle it and Ctrl+Shift+U
+//     were registered for is gone. abebb77.
 //
 // Comparison 2, import against migration, compares every field of Config and the
 // startup state, and finds no difference. What the conversion drops is the one
@@ -305,26 +305,32 @@ void Startup(const kcd2_ht::Config& c, Observed& o) {
     o.yaw_mode = bindings.yaw_mode;
 }
 
+// Every setting the runtime Config still has comes from the import's map, so a
+// field the map mis-copies differs from the published build. Only what Config no
+// longer holds comes from the frozen reader: MoveCrosshair, which the dropped
+// values check against the map, and the hex hotkey codes, whose lists the
+// registered bindings compare.
 Observed FromImport(const Imported& i) {
+    const kcd2_ht::Config& c = i.config;
     const kcd2_ht::legacy::Config& f = i.frozen;
     Observed o;
-    o.udp_port = f.udp_port;
-    o.enable_on_startup = f.enable_on_startup;
-    o.world_space_yaw = f.world_space_yaw;
+    o.udp_port = c.udp_port;
+    o.enable_on_startup = c.enable_on_startup;
+    o.world_space_yaw = c.world_space_yaw;
     o.move_crosshair = f.move_crosshair;
-    o.local_smoothing = f.local_smoothing;
-    o.remote_smoothing = f.remote_smoothing;
-    o.max_extrapolation_fraction = f.max_extrapolation_fraction;
-    o.position_enabled = f.position_enabled;
-    o.limit_x = f.limit_x;
-    o.limit_y = f.limit_y;
-    o.limit_y_down = f.limit_y_down;
-    o.limit_z = f.limit_z;
-    o.limit_z_back = f.limit_z_back;
+    o.local_smoothing = c.local_smoothing;
+    o.remote_smoothing = c.remote_smoothing;
+    o.max_extrapolation_fraction = c.max_extrapolation_fraction;
+    o.position_enabled = c.position_enabled;
+    o.limit_x = c.limit_x;
+    o.limit_y = c.limit_y;
+    o.limit_y_down = c.limit_y_down;
+    o.limit_z = c.limit_z;
+    o.limit_z_back = c.limit_z_back;
     o.toggle_key = f.toggle_key;
     o.position_key = f.position_key;
     o.yaw_mode_key = f.yaw_mode_key;
-    Startup(i.config, o);
+    Startup(c, o);
     return o;
 }
 
