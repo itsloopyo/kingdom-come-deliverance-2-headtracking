@@ -3,8 +3,8 @@
 #include <string>
 
 // Where the game EXE lives - the log and the INI sit beside it. DirectoryOf has
-// a narrow overload because the frozen legacy reader opens the INI through
-// GetPrivateProfileStringA, by the path's ANSI form.
+// a narrow overload because the frozen legacy reader opens the INI by the path's
+// ANSI form, as the published builds did.
 
 namespace kcd2_ht
 {
