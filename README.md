@@ -106,7 +106,6 @@ Two equivalent binding sets, use whichever your keyboard has:
 | Toggle tracking                 | `End`       | `Ctrl+Shift+Y` |
 | Cycle tracking mode             | `Page Up`   | `Ctrl+Shift+G` |
 | Toggle yaw mode (world / local) | `Page Down` | `Ctrl+Shift+H` |
-| Cycle ADS mode                  | `Insert`    | `Ctrl+Shift+U` |
 
 Head tracking pauses while the game's pause menu is open, including when opened
 with `Backspace`. Closing the menu restores tracking if you have it enabled.
@@ -120,24 +119,16 @@ with `Backspace`. Closing the menu restores tracking if you have it enabled.
 
 `Page Down` / `Ctrl+Shift+H` switches yaw between world-locked (the default, horizon-stable) and camera-local, which follows the camera's current up-axis.
 
-`Insert` / `Ctrl+Shift+U` cycles what happens when you aim a bow or crossbow.
-Raising the sights eases the view onto the weapon's aim direction. The modes
-then control head tracking for the rest of the aim:
-
-1. **Tracking paused** (default) - head yaw, pitch and lean pause while aiming.
-2. **Tracking on, with aim marker** - tracking continues from the pose where
-   aiming began, with a small cross marking the weapon's aim direction.
-3. **Tracking on, no aim marker** - the same tracking, without the added cross.
-
-Head roll remains active in all three modes. Lowering the weapon restores
-normal tracking. The marker shows aim direction, without compensating for
-projectile drop.
-
-The choice is saved to `HeadTracking.ini`, so it survives a restart. This mod
-draws no on-screen text of its own, so the mode you switched to is named in
-`HeadTracking.log` rather than in a toast.
-
 Every press is named in `HeadTracking.log`.
+
+### Aiming down sights
+
+Head tracking stays on while you aim a bow or crossbow. The mod moves only the
+view: the aim stays on your mouse or controller, so with your head turned you
+are looking past the weapon rather than down it.
+
+Leaning eases out while the sights are up, because it would move your eye off
+them, and eases back in when you lower the weapon.
 
 ## Configuration
 
@@ -179,16 +170,11 @@ LimitYDown=0.20
 LimitZ=0.40
 LimitZBack=0.10
 
-[ADS]
-; paused, marker, or tracked. Insert cycles these while playing.
-AdsMode=paused
-
 [Hotkeys]
-; Windows virtual-key codes. Ctrl+Shift+Y / G / H / U work as alternatives.
+; Windows virtual-key codes. Ctrl+Shift+Y / G / H work as alternatives.
 ToggleKey=0x23
 PositionKey=0x21
 YawModeKey=0x22
-AdsModeKey=0x2D
 ```
 
 There is deliberately no sensitivity or axis-inversion setting. Shape the pose in your tracker app instead, so one profile behaves the same in every game.
@@ -219,6 +205,10 @@ Everything the mod does is written to `HeadTracking.log` next to `KingdomCome.ex
 - The view drifts or sits off-center: center in your tracker app, the mod has no center of its own.
 - Yaw feels wrong at extreme up or down angles: toggle world-locked and camera-local yaw with `Page Down`. World-locked is horizon-stable, camera-local follows the camera's up-axis and leans the view on steeply pitched turns.
 - An axis moves the view the wrong way: fix the axis direction in your tracker profile. The mod exposes no inversion setting on purpose, so one tracker profile stays correct across every game.
+
+**The weapon is off to one side when I aim**
+
+- Your head is turned: the weapon stays on your aim and you are looking past it. Turn back to it, or move your aim to where you are looking.
 
 ## Updating
 

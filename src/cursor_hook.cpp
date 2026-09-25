@@ -6,12 +6,6 @@
 
 #include <cameraunlock/hooks/hook_manager.h>
 
-#define CAMERAUNLOCK_DX12_OVERLAY_IMPLEMENTATION
-#define CAMERAUNLOCK_AIM_MARKER_DX12_IMPLEMENTATION
-#include <cameraunlock/rendering/aim_marker_dx12.h>
-
-#include "ads.h"
-
 #include "builds/build_registry.h"
 #include "hook_install.h"
 #include "logging.h"
@@ -29,11 +23,9 @@ namespace kcd2_ht::cursor
         SetCursorPosition_t g_orig = nullptr;
         std::uintptr_t g_moduleBase = 0;
 
-        // Whether the crosshair is actually moved. The hook installs either
-        // way, because the ADS state is read from the call sites it sees and
-        // a player who turned the crosshair move off still wants their sights
-        // detected. With this false the detour passes every call straight
-        // through, so the HUD is left exactly as the game drew it.
+        // Whether the crosshair is actually moved. With this false the detour
+        // passes every call straight through, so the HUD is left exactly as the
+        // game drew it.
         bool g_moveCrosshair = true;
 
         struct AimState
@@ -47,7 +39,6 @@ namespace kcd2_ht::cursor
         };
 
         AimState g_aim;
-        cameraunlock::rendering::AimMarkerDX12 g_marker;
 
         // One frame at 30 fps is 33 ms. Loose enough not to blink on a stutter,
         // tight enough that the cursor is back under the game's control by the
@@ -191,7 +182,6 @@ namespace kcd2_ht::cursor
     {
         g_moduleBase = moduleBase;
         g_moveCrosshair = moveCrosshair;
-        g_marker.SetLogger([](const char* line) { Log::Line("%s", line); });
 
         const auto& offsets = builds::Offsets();
         void* target = reinterpret_cast<void*>(moduleBase + offsets.kSetCursorPositionRva);
@@ -215,15 +205,10 @@ namespace kcd2_ht::cursor
         else
             Log::Line("HUD cursor hooked at RVA 0x%08X (renderer not up yet; size read on first "
                       "use).", offsets.kSetCursorPositionRva);
-        if (ads::Mode() == ads::AdsMode::Marker) PrepareAimMarker();
         return true;
     }
 
-    void PrepareAimMarker() { g_marker.Ensure(); }
-
-    void HideAimMarker() { g_marker.Publish(false, 0.0f, 0.0f); }
-
-    void SubmitAim(const AimProjection& aim, float fovRadians, float projectionRatio, bool aiming)
+    void SubmitAim(const AimProjection& aim, float fovRadians, float projectionRatio)
     {
         g_aim.tanRight.store(aim.tanRight, std::memory_order_relaxed);
         g_aim.tanUp.store(aim.tanUp, std::memory_order_relaxed);
@@ -231,13 +216,5 @@ namespace kcd2_ht::cursor
         g_aim.fovRadians.store(fovRadians, std::memory_order_relaxed);
         g_aim.projectionRatio.store(projectionRatio, std::memory_order_relaxed);
         g_aim.stampMs.store(GetTickCount64(), std::memory_order_relaxed);
-
-        if (ads::Mode() != ads::AdsMode::Marker || !aiming || !aim.inFront
-                || !IsPlausibleFrustum(fovRadians, projectionRatio)) {
-            HideAimMarker();
-            return;
-        }
-        const ScreenPoint point = ToScreen(aim, 2.0f, 2.0f, fovRadians, projectionRatio);
-        g_marker.Publish(true, point.x - 1.0f, 1.0f - point.y);
     }
 }

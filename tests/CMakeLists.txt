@@ -11,7 +11,6 @@ add_executable(kcd_tests
     pose_guard_tests.cpp
     exe_paths_tests.cpp
     build_profile_tests.cpp
-    ads_pose_tests.cpp
     ads_gate_tests.cpp
     ${CMAKE_SOURCE_DIR}/src/view_injection.cpp
     ${CMAKE_SOURCE_DIR}/src/aim_projection.cpp

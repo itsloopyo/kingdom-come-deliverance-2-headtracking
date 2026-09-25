@@ -208,16 +208,5 @@ int RunConfigTests()
     HotkeyValidationTests(failures);
     DefaultFileMatchesDefaultsTests(failures);
 
-    for (const auto mode : {cameraunlock::ads::AdsMode::Paused,
-                            cameraunlock::ads::AdsMode::Marker,
-                            cameraunlock::ads::AdsMode::Tracked}) {
-        const std::string dir = MakeTempDir();
-        kcd2_ht::WriteDefaultConfigIfMissing(dir);
-        kcd2_ht::PersistAdsMode(dir, mode);
-        kcd2_ht::Config loaded;
-        kcd2_ht::LoadConfig(dir, loaded);
-        Check(failures, loaded.ads_mode == mode, "each ADS mode survives saving and reloading");
-    }
-
     return kcd_tests::Report("Config tests", failures);
 }

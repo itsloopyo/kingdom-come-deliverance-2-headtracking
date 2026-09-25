@@ -18,18 +18,13 @@
 
 namespace kcd2_ht::cursor
 {
-    // Installed whenever the mod is active, whatever MoveCrosshair says: the
-    // ADS state is read from the call sites this hook sees, so a player who
-    // turned the crosshair move off still gets their sights detected.
-    // @p moveCrosshair decides only whether the aim offset is applied.
+    // @p moveCrosshair decides whether the aim offset is applied; off, the
+    // detour passes every call straight through.
     bool Install(std::uintptr_t moduleBase, bool moveCrosshair);
-
-    void PrepareAimMarker();
-    void HideAimMarker();
 
     // Called from the view hook on every frame tracking is applied. Doubles as
     // the liveness signal: when these stop arriving the cursor goes back to
     // wherever the game wanted it, which is what makes menus and loading screens
     // look after themselves.
-    void SubmitAim(const AimProjection& aim, float fovRadians, float projectionRatio, bool aiming);
+    void SubmitAim(const AimProjection& aim, float fovRadians, float projectionRatio);
 }

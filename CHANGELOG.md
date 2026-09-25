@@ -13,6 +13,20 @@
   package `Content` folder, and so do `HeadTracking.ini` and
   `HeadTracking.log`.
 
+### Changed
+
+- Head tracking now carries straight on while you aim a bow or crossbow.
+  Raising the sights no longer moves the view, and head rotation is never
+  paused or measured from where the aim began. Only the lean eases out while
+  the sights are up, and back in when they come down.
+
+### Removed
+
+- The aim-down-sights mode cycle (paused, marker, tracked) on `Insert` /
+  `Ctrl+Shift+U`, the aim marker it could draw, and the `[ADS] AdsMode` and
+  `[Hotkeys] AdsModeKey` settings. A config that still carries them loads as
+  before and the two keys are ignored.
+
 ### Fixed
 
 - Fixed a launcher install on the Game Pass version putting the loader and the

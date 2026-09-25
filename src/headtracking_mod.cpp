@@ -9,7 +9,6 @@
 #include <cameraunlock/hooks/hook_manager.h>
 #include <cameraunlock/math/angle_utils.h>
 
-#include "ads.h"
 #include "builds/build_registry.h"
 #include "config.h"
 #include "cursor_hook.h"
@@ -197,9 +196,6 @@ namespace kcd2_ht
 
             Runtime().trackingEnabled.store(g_config.enable_on_startup);
             Runtime().worldSpaceYaw.store(g_config.world_space_yaw);
-            // Seeded from the file, never forced: the ADS mode is the
-            // player's choice and start-up logic must not discard it.
-            ads::SetMode(g_config.ads_mode);
             return bound;
         }
 
@@ -214,13 +210,12 @@ namespace kcd2_ht
 
         void LogConfig()
         {
-            Log::Line("config: port=%d enabled=%s worldYaw=%s crosshair=%s ads=%s local=%.2f remote=%.2f "
+            Log::Line("config: port=%d enabled=%s worldYaw=%s crosshair=%s local=%.2f remote=%.2f "
                       "pos=%s limits=(x %.2f, y +%.2f/-%.2f, z %.2f fwd/%.2f back)",
                       g_config.udp_port,
                       g_config.enable_on_startup ? "yes" : "no",
                       g_config.world_space_yaw ? "yes" : "no",
                       g_config.move_crosshair ? "moved" : "stock",
-                      cameraunlock::ads::AdsModeValue(g_config.ads_mode),
                       static_cast<double>(g_config.local_smoothing),
                       static_cast<double>(g_config.remote_smoothing),
                       g_config.position_enabled ? "on" : "off",
@@ -252,8 +247,8 @@ namespace kcd2_ht
                                 " bound as a receiver) - close it and tracking starts within a"
                                 " second, no restart needed";
             Log::Line("init complete. End = toggle tracking, Page Up = cycle mode (6DOF / "
-                      "rotation only / lean only), Page Down = yaw mode, Insert = ADS mode "
-                      "(paused / marker / tracked; chords Ctrl+Shift+Y/G/H/U)."
+                      "rotation only / lean only), Page Down = yaw mode "
+                      "(chords Ctrl+Shift+Y/G/H)."
                       " %s. Centre in your tracker app - this mod keeps no centre of its own.",
                       portLine.c_str());
         }

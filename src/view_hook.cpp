@@ -48,21 +48,12 @@ namespace kcd2_ht::view_hook
         // one dt per rendered frame.
         FrameClock g_frameClock;
 
-        // Whether the sights were up on the last frame that reached the ADS
-        // stage. Reported even in the paused mode, where the pose has been faded
-        // to nothing: the mode says what tracking does, this says what the game
-        // is doing, and the heartbeat needs both to be readable.
-        std::atomic<bool> g_aiming{false};
-
         // Every path that declines to apply a pose is a real suppression, so the
-        // ADS fade and the entry pose are dropped with it. Returning early
-        // without this leaves the next aim resuming against a pose captured
-        // before the suppression.
+        // ADS fade is dropped with it. Returning early without this leaves the
+        // next frame resuming a lean transition from before the suppression.
         bool Suppressed()
         {
             ads::Suppress();
-            cursor::HideAimMarker();
-            g_aiming.store(false, std::memory_order_relaxed);
             return false;
         }
 
@@ -112,10 +103,8 @@ namespace kcd2_ht::view_hook
             // What the sights are doing to the pose, decided before it is
             // composed onto the camera so everything downstream - the write,
             // the frustum rebuild and the reticle projection - agrees on one
-            // pose. In the paused mode this is what fades the head off the
-            // camera and holds it off for the length of the aim.
-            g_aiming.store(ads::Apply(pose, GetTickCount64(), game_state::IsAiming(g_moduleBase)),
-                           std::memory_order_relaxed);
+            // pose. Rotation passes through; the lean eases out while aiming.
+            ads::Apply(pose, GetTickCount64(), game_state::IsAiming(g_moduleBase));
 
             const auto& offsets = builds::Offsets();
             auto* cameraBytes = reinterpret_cast<std::uint8_t*>(self) + offsets.kCViewCameraOffset;
@@ -136,8 +125,7 @@ namespace kcd2_ht::view_hook
 
             cursor::SubmitAim(ProjectAim(clean, *camera),
                               g_fovRadians.load(std::memory_order_relaxed),
-                              g_projectionRatio.load(std::memory_order_relaxed),
-                              g_aiming.load(std::memory_order_relaxed));
+                              g_projectionRatio.load(std::memory_order_relaxed));
             return true;
         }
 
