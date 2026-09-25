@@ -28,12 +28,4 @@ namespace kcd2_ht
         if (length == 0 || length >= MAX_PATH) return L".";
         return DirectoryOf(std::wstring(path, length));
     }
-
-    std::string ExeDirectoryNarrow()
-    {
-        char path[MAX_PATH]{};
-        const DWORD length = GetModuleFileNameA(nullptr, path, MAX_PATH);
-        if (length == 0 || length >= MAX_PATH) return ".";
-        return DirectoryOf(std::string(path, length));
-    }
 }

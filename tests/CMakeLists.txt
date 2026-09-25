@@ -1,8 +1,8 @@
 # Only the mod TUs whose behaviour is decidable without a game process are
 # compiled in - headtracking_mod.cpp, view_hook.cpp, cursor_hook.cpp and
 # hotkeys.cpp are left out because they only do anything against a live hook.
-# config.cpp is in because it pulls core's logger and INI reader, which is what
-# target_link_libraries satisfies.
+# config.cpp is in because it pulls core's config owner and the frozen legacy
+# reader, which is what target_link_libraries satisfies.
 add_executable(kcd_tests
     test_main.cpp
     view_injection_tests.cpp
@@ -15,6 +15,7 @@ add_executable(kcd_tests
     ${CMAKE_SOURCE_DIR}/src/view_injection.cpp
     ${CMAKE_SOURCE_DIR}/src/aim_projection.cpp
     ${CMAKE_SOURCE_DIR}/src/config.cpp
+    ${CMAKE_SOURCE_DIR}/src/hotkey_bindings.cpp
     ${CMAKE_SOURCE_DIR}/src/legacy_config/legacy_config.cpp
     ${CMAKE_SOURCE_DIR}/src/ads.cpp
     ${CMAKE_SOURCE_DIR}/src/exe_paths.cpp
@@ -26,6 +27,8 @@ target_include_directories(kcd_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/cameraunlock-core/cpp/include
 )
+
+target_compile_definitions(kcd_tests PRIVATE KCD2_REPO_DIR="${CMAKE_SOURCE_DIR}")
 
 target_link_libraries(kcd_tests PRIVATE cameraunlock)
 

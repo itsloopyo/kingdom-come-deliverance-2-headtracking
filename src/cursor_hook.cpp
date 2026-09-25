@@ -23,11 +23,6 @@ namespace kcd2_ht::cursor
         SetCursorPosition_t g_orig = nullptr;
         std::uintptr_t g_moduleBase = 0;
 
-        // Whether the crosshair is actually moved. With this false the detour
-        // passes every call straight through, so the HUD is left exactly as the
-        // game drew it.
-        bool g_moveCrosshair = true;
-
         struct AimState
         {
             std::atomic<float> tanRight{0.0f};
@@ -161,7 +156,7 @@ namespace kcd2_ht::cursor
                 reinterpret_cast<std::uintptr_t>(_ReturnAddress()) - g_moduleBase;
 
             float dx = 0.0f, dy = 0.0f;
-            if (g_moveCrosshair && pos != nullptr && CallSiteIsCursor(returnRva)
+            if (pos != nullptr && CallSiteIsCursor(returnRva)
                     && AimOffset(dx, dy))
             {
                 // For the site that hands in screen centre this is exact. For the
@@ -178,10 +173,9 @@ namespace kcd2_ht::cursor
         }
     }
 
-    bool Install(std::uintptr_t moduleBase, bool moveCrosshair)
+    bool Install(std::uintptr_t moduleBase)
     {
         g_moduleBase = moduleBase;
-        g_moveCrosshair = moveCrosshair;
 
         const auto& offsets = builds::Offsets();
         void* target = reinterpret_cast<void*>(moduleBase + offsets.kSetCursorPositionRva);

@@ -7,8 +7,6 @@
 
 #include "exe_paths.h"
 
-#include <algorithm>
-
 #include "test_support.h"
 
 namespace {
@@ -46,27 +44,18 @@ void WideTests(int& failures)
 }
 
 // ExeDirectory reads the running process, so the exact answer is whatever built
-// the test binary. What is checkable is the contract both callers rely on: a
-// non-empty directory with no trailing separator, in both character widths, and
-// the two agreeing with each other.
+// the test binary. What is checkable is the contract its callers rely on: a
+// non-empty directory with no trailing separator.
 void RunningProcessTests(int& failures)
 {
     const std::wstring wide = kcd2_ht::ExeDirectory();
-    const std::string narrow = kcd2_ht::ExeDirectoryNarrow();
 
-    Check(failures, !wide.empty() && !narrow.empty(),
+    Check(failures, !wide.empty(),
           "the exe directory is never empty, so the log path is never a bare file name");
-    if (wide.empty() || narrow.empty()) return;
+    if (wide.empty()) return;
 
-    Check(failures, wide.back() != L'\\' && wide.back() != L'/'
-                 && narrow.back() != '\\' && narrow.back() != '/',
+    Check(failures, wide.back() != L'\\' && wide.back() != L'/',
           "the exe directory carries no trailing separator, so appending one cannot double it");
-    // Only compared while the path stays ASCII: the narrow form is the active
-    // code page's rendering of the same characters, and outside ASCII that is
-    // free to be a different number of bytes.
-    const bool ascii = std::all_of(wide.begin(), wide.end(), [](wchar_t c) { return c < 128; });
-    Check(failures, !ascii || std::equal(wide.begin(), wide.end(), narrow.begin(), narrow.end()),
-          "an ASCII exe directory reads the same in both character widths");
 }
 
 }  // namespace

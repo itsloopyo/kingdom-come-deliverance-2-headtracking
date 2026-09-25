@@ -27,6 +27,15 @@ build-debug = { cmd = "cmake --build build --config Debug", depends-on = ["setup
 # (tests/config_differential). Same build the DLL comes out of, so CI runs it too.
 test = { cmd = "ctest --test-dir build -C Release --output-on-failure", depends-on = ["build"] }
 
+# Rewrite the committed HeadTracking.ini from the config table after a change to
+# a row, a comment or a default, then re-encode any launcher seed that writes it.
+# The render test in kcd_tests fails until the committed file matches.
+render-config = { cmd = "build/tests/Release/kcd_tests.exe --render-config HeadTracking.ini && node cameraunlock-core/scripts/encode-seed.mjs", depends-on = ["build"] }
+
+# Checks the newest release/*-installer.zip against its launcher-manifest.json,
+# and that the Nexus ZIP carries no HeadTracking.ini. Run after package.
+validate-manifest = "node cameraunlock-core/scripts/validate-manifest.mjs"
+
 # Refresh the vendored Ultimate ASI Loader under vendor/ultimate-asi-loader.
 # Manual dev action with a commit attached - build/package/release never
 # depend on it, and CI consumes whatever is committed under vendor/.

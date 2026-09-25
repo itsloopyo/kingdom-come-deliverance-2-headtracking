@@ -2,9 +2,9 @@
 
 #include <string>
 
-// Where the game EXE lives - the log and the INI sit beside it. Both character
-// widths exist because the log path is wide and core's IniReader is ANSI
-// (GetPrivateProfile*A).
+// Where the game EXE lives - the log and the INI sit beside it. DirectoryOf has
+// a narrow overload because the frozen legacy reader opens the INI through
+// GetPrivateProfileStringA, by the path's ANSI form.
 
 namespace kcd2_ht
 {
@@ -14,5 +14,4 @@ namespace kcd2_ht
     std::string  DirectoryOf(const std::string& path);
 
     std::wstring ExeDirectory();
-    std::string  ExeDirectoryNarrow();
 }

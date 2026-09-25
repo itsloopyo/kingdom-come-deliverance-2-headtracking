@@ -3,19 +3,31 @@
 // Oracle: the reader of the newest published build (the rolling dev pre-release,
 // ed0140b, core f92be69), vendored under oracle/published/ byte for byte, with the
 // startup code that turned its output into the session's state.
-// Import: the frozen reader in src/legacy_config/, through the mod's startup code.
+// Import: the frozen reader in src/legacy_config/ and its map into Config, the
+// owner's LegacyImport, through the mod's startup code.
+// Migration: the config owner converting the file in a scratch folder, then the
+// canonical reader and table on the result.
 //
-// Comparison 1, oracle against import, runs on every input: the published build's
-// first-run file, every other committed version of that file, no file, an empty
-// file and the corpus core generates from the first-run file. It compares every
-// field both Config types have, floats bit for bit, the startup state and the
+// Every input runs through all three: the published build's first-run file, every
+// other committed version of that file, no file, an empty file and the corpus core
+// generates from the first-run file.
+//
+// Comparison 1, oracle against import, compares every field the published Config
+// and the frozen one share, floats bit for bit, the startup state and the
 // registered hotkey bindings. The differences it finds, each with the commit that
 // made it, are exactly these, and every other field has to match:
 //
 //   - [ADS] AdsMode is no longer read, and the paused / marker / tracked cycle it
 //     seeded is gone. abebb77.
 //   - [Hotkeys] AdsModeKey is no longer read, and neither it nor Ctrl+Shift+U is
-//     registered. abebb77.
+//     registered. abebb77. Insert and Ctrl+Shift+U now toggle true free look.
+//
+// Comparison 2, import against migration, compares every field of Config and the
+// startup state, and finds no difference. What the conversion drops is the one
+// approved change it makes: MoveCrosshair=false (approved change `reticle`), which
+// the import reports as dropped and the owner logs, since the game's crosshair now
+// always follows the aim. No moved default: every Config default is the value the
+// published build shipped, so no file converts to the published defaults too.
 //
 // The published build never refuses a file, so no input is refused.
 //
@@ -46,6 +58,10 @@
 #include <string>
 #include <vector>
 
+#include <cameraunlock/config/canonical_ini.h>
+#include <cameraunlock/config/config_owner.h>
+#include <cameraunlock/config/config_table.h>
+#include <cameraunlock/config/legacy_import.h>
 #include <cameraunlock/config/testing/ini_mutations.h>
 #include <cameraunlock/input/key_bindings.h>
 
@@ -260,30 +276,26 @@ Observed FromOracle(const kcd2_config_oracle::Result& r) {
     return o;
 }
 
-// The mod's own startup on <dir>, which reads through the frozen reader.
-Observed FromImport(const fs::path& dir) {
-    const std::string exeDir = dir.string();
-    kcd2_ht::WriteDefaultConfigIfMissing(exeDir);
-    kcd2_ht::Config c;
-    kcd2_ht::LoadConfig(exeDir, c);
+// The import as the owner runs it on <file>, starting from the table's defaults,
+// and the frozen struct its reader filled.
+struct Imported {
+    cameraunlock::config::ImportResult result;
+    kcd2_ht::legacy::Config frozen;
+    kcd2_ht::Config config;
+};
 
-    Observed o;
-    o.udp_port = c.udp_port;
-    o.enable_on_startup = c.enable_on_startup;
-    o.world_space_yaw = c.world_space_yaw;
-    o.move_crosshair = c.move_crosshair;
-    o.local_smoothing = c.local_smoothing;
-    o.remote_smoothing = c.remote_smoothing;
-    o.max_extrapolation_fraction = c.max_extrapolation_fraction;
-    o.position_enabled = c.position_enabled;
-    o.limit_x = c.limit_x;
-    o.limit_y = c.limit_y;
-    o.limit_y_down = c.limit_y_down;
-    o.limit_z = c.limit_z;
-    o.limit_z_back = c.limit_z_back;
-    o.toggle_key = c.toggle_key;
-    o.position_key = c.position_key;
-    o.yaw_mode_key = c.yaw_mode_key;
+Imported RunImport(const fs::path& file) {
+    Imported i{cameraunlock::config::ImportResult::Imported({}), {}, kcd2_ht::ConfigTableFor().defaults()};
+    kcd2_ht::legacy::LoadConfig(file.parent_path().string(), i.frozen);
+    cameraunlock::config::LegacyInput input;
+    input.path = file.wstring();
+    input.ansi_path = file.string();
+    i.result = kcd2_ht::LegacyImportFor().run(input, i.config);
+    return i;
+}
+
+// Startup as the mod's own startup code derives it from a Config.
+void Startup(const kcd2_ht::Config& c, Observed& o) {
     o.tracking_enabled = c.enable_on_startup;
     o.tracking_mode = static_cast<int>(kcd2_ht::StartupMode(c));
     o.world_yaw = c.world_space_yaw;
@@ -291,6 +303,28 @@ Observed FromImport(const fs::path& dir) {
     o.toggle = bindings.toggle;
     o.cycle_tracking_mode = bindings.cycle_tracking_mode;
     o.yaw_mode = bindings.yaw_mode;
+}
+
+Observed FromImport(const Imported& i) {
+    const kcd2_ht::legacy::Config& f = i.frozen;
+    Observed o;
+    o.udp_port = f.udp_port;
+    o.enable_on_startup = f.enable_on_startup;
+    o.world_space_yaw = f.world_space_yaw;
+    o.move_crosshair = f.move_crosshair;
+    o.local_smoothing = f.local_smoothing;
+    o.remote_smoothing = f.remote_smoothing;
+    o.max_extrapolation_fraction = f.max_extrapolation_fraction;
+    o.position_enabled = f.position_enabled;
+    o.limit_x = f.limit_x;
+    o.limit_y = f.limit_y;
+    o.limit_y_down = f.limit_y_down;
+    o.limit_z = f.limit_z;
+    o.limit_z_back = f.limit_z_back;
+    o.toggle_key = f.toggle_key;
+    o.position_key = f.position_key;
+    o.yaw_mode_key = f.yaw_mode_key;
+    Startup(i.config, o);
     return o;
 }
 
@@ -324,10 +358,49 @@ std::vector<std::string> Differences(const Observed& a, const Observed& b) {
     return d;
 }
 
+// Every field of the runtime Config.
+std::vector<std::string> ConfigDifferences(const kcd2_ht::Config& a, const kcd2_ht::Config& b) {
+    std::vector<std::string> d;
+    const auto field = [&d](bool same, const char* name) {
+        if (!same) d.push_back(name);
+    };
+    field(a.udp_port == b.udp_port, "udp_port");
+    field(a.enable_on_startup == b.enable_on_startup, "enable_on_startup");
+    field(a.world_space_yaw == b.world_space_yaw, "world_space_yaw");
+    field(a.rotation_enabled == b.rotation_enabled, "rotation_enabled");
+    field(a.position_enabled == b.position_enabled, "position_enabled");
+    field(a.true_free_look == b.true_free_look, "true_free_look");
+    field(SameBits(a.local_smoothing, b.local_smoothing), "local_smoothing");
+    field(SameBits(a.remote_smoothing, b.remote_smoothing), "remote_smoothing");
+    field(SameBits(a.max_extrapolation_fraction, b.max_extrapolation_fraction), "max_extrapolation_fraction");
+    field(SameBits(a.limit_x, b.limit_x), "limit_x");
+    field(SameBits(a.limit_y, b.limit_y), "limit_y");
+    field(SameBits(a.limit_y_down, b.limit_y_down), "limit_y_down");
+    field(SameBits(a.limit_z, b.limit_z), "limit_z");
+    field(SameBits(a.limit_z_back, b.limit_z_back), "limit_z_back");
+    field(a.toggle_key == b.toggle_key, "toggle_key");
+    field(a.cycle_tracking_mode_key == b.cycle_tracking_mode_key, "cycle_tracking_mode_key");
+    field(a.yaw_mode_key == b.yaw_mode_key, "yaw_mode_key");
+    field(a.true_free_look_key == b.true_free_look_key, "true_free_look_key");
+    return d;
+}
+
 std::vector<fs::path> Listing(const fs::path& dir) {
     std::vector<fs::path> names;
     for (const auto& entry : fs::directory_iterator(dir)) names.push_back(entry.path().filename());
     return names;
+}
+
+bool Contains(const std::vector<std::string>& lines, const std::string& text) {
+    for (const std::string& line : lines)
+        if (line.find(text) != std::string::npos) return true;
+    return false;
+}
+
+cameraunlock::config::RenderHeader Header() {
+    cameraunlock::config::RenderHeader header;
+    header.display_name = kcd2_ht::kGameDisplayName;
+    return header;
 }
 
 // The oracle is the published source and the core sources it compiled against,
@@ -386,35 +459,134 @@ void FirstRunTests(Scratch& scratch) {
           "the published build's first run writes inputs/first-run-dev-ed0140b.ini byte for byte");
 }
 
-void ComparisonOne(Scratch& scratch) {
-    std::cout << "Comparison 1: published build against the import\n";
+// Converts <bytes> (or no file) in a fresh folder with the mod's owner and checks
+// what the conversion leaves behind. Returns the settings the session runs on.
+kcd2_ht::Config Migrate(Scratch& scratch, const Input& input, const Imported& imported) {
+    using cameraunlock::config::ConfigLoadStatus;
+    using cameraunlock::config::ConfigOwner;
+
+    const fs::path dir = scratch.Folder("migrate");
+    const fs::path file = dir / "HeadTracking.ini";
+    if (input.present) WriteBytes(file, input.bytes);
+
+    ConfigOwner<kcd2_ht::Config> owner(kcd2_ht::OwnerOptions(file.wstring()));
+    const auto loaded = owner.Load();
+    const ConfigLoadStatus expected = input.present ? ConfigLoadStatus::Migrated : ConfigLoadStatus::Created;
+    if (loaded.status != expected) {
+        Fail(input.name + ": the owner's load is " +
+             cameraunlock::config::ConfigLoadStatusName(loaded.status) + ", not " +
+             cameraunlock::config::ConfigLoadStatusName(expected) + " (" + loaded.reason + ")");
+        return loaded.config;
+    }
+
+    const std::string migrated = ReadBytes(file);
+    if (input.present) {
+        if (ReadBytes(dir / "HeadTracking.ini.pre-canonical") != input.bytes)
+            Fail(input.name + ": .pre-canonical does not hold the input");
+        if (fs::exists(dir / "HeadTracking.ini.pre-canonical.last"))
+            Fail(input.name + ": the first conversion wrote a .pre-canonical.last");
+        for (const auto& dropped : imported.result.dropped) {
+            if (!Contains(loaded.log, cameraunlock::config::DescribeDroppedValue(dropped)))
+                Fail(input.name + ": the log does not name the dropped " + dropped.key);
+        }
+    }
+
+    // The migrated bytes as the canonical lint reads them: nothing for the reader or
+    // the table to report, and a render of what they read gives them back.
+    const cameraunlock::config::CanonicalIni doc = cameraunlock::config::ParseCanonicalIni(migrated);
+    const auto table = kcd2_ht::ConfigTableFor();
+    kcd2_ht::Config reread = table.defaults();
+    if (doc.status != cameraunlock::config::CanonicalReadStatus::Readable || !doc.diagnostics.empty()
+            || !cameraunlock::config::ApplyCanonical(doc, table, reread).diagnostics.empty())
+        Fail(input.name + ": the migrated file draws a diagnostic");
+    if (cameraunlock::config::RenderCanonical(table, reread, Header()) != migrated)
+        Fail(input.name + ": rendering the migrated file's settings does not give its bytes");
+    for (const std::string& field : ConfigDifferences(reread, loaded.config))
+        Fail(input.name + ": the migrated file reads back a different " + field);
+
+    // A second launch finds a canonical file and leaves it alone.
+    ConfigOwner<kcd2_ht::Config> next(kcd2_ht::OwnerOptions(file.wstring()));
+    if (next.Load().status != ConfigLoadStatus::Canonical || ReadBytes(file) != migrated
+            || fs::exists(dir / "HeadTracking.ini.pre-canonical.last"))
+        Fail(input.name + ": migrating the migrated file did something");
+    return loaded.config;
+}
+
+void Comparisons(Scratch& scratch) {
+    std::cout << "Comparison 1, published build against the import, and comparison 2, import against migration\n";
     const std::vector<Input> inputs = Inputs();
     int compared = 0;
+    int dropped = 0;
     for (const Input& input : inputs) {
         const fs::path oracleDir = scratch.Folder("oracle");
         const fs::path importDir = scratch.Folder("import");
+        const fs::path importFile = importDir / "HeadTracking.ini";
         if (input.present) {
             WriteBytes(oracleDir / "HeadTracking.ini", input.bytes);
-            WriteBytes(importDir / "HeadTracking.ini", input.bytes);
-            SetFileAttributesW((importDir / "HeadTracking.ini").c_str(), FILE_ATTRIBUTE_READONLY);
+            WriteBytes(importFile, input.bytes);
+            SetFileAttributesW(importFile.c_str(), FILE_ATTRIBUTE_READONLY);
         }
 
         const kcd2_config_oracle::Result published = kcd2_config_oracle::Startup(oracleDir.string());
-        const Observed imported = FromImport(importDir);
+        const Imported imported = RunImport(importFile);
 
-        for (const std::string& field : Differences(FromOracle(published), imported))
-            Fail(input.name + ": " + field + " differs from the published build");
+        for (const std::string& field : Differences(FromOracle(published), FromImport(imported)))
+            Fail(input.name + ": comparison 1: " + field + " differs from the published build");
         if (published.ads_mode_cycle.size() != 2)
             Fail(input.name + ": the published build registered no ADS mode cycle");
 
-        if (input.present) {
-            if (Listing(importDir) != std::vector<fs::path>{"HeadTracking.ini"}
-                    || ReadBytes(importDir / "HeadTracking.ini") != input.bytes)
-                Fail(input.name + ": the import changed the folder of a read-only file");
-        }
+        const auto expectedStatus = input.present ? cameraunlock::config::ImportStatus::Imported
+                                                  : cameraunlock::config::ImportStatus::Absent;
+        if (imported.result.status != expectedStatus)
+            Fail(input.name + ": the import's status is not " + (input.present ? "Imported" : "Absent"));
+        const bool dropsCrosshair = !imported.frozen.move_crosshair;
+        const bool droppedAsReticle = imported.result.dropped.size() == 1
+            && imported.result.dropped[0].rule == cameraunlock::config::DropRule::Reticle
+            && imported.result.dropped[0].key == "MoveCrosshair";
+        if (dropsCrosshair ? !droppedAsReticle : !imported.result.dropped.empty())
+            Fail(input.name + ": the import's dropped values are not exactly MoveCrosshair=false");
+        if (dropsCrosshair) ++dropped;
+        if (!imported.result.pose_shaping.empty())
+            Fail(input.name + ": the import recorded pose shaping the published build never applied");
+
+        if (input.present && (Listing(importDir) != std::vector<fs::path>{"HeadTracking.ini"}
+                              || ReadBytes(importFile) != input.bytes))
+            Fail(input.name + ": the import changed the folder of a read-only file");
+
+        const kcd2_ht::Config migrated = Migrate(scratch, input, imported);
+        for (const std::string& field : ConfigDifferences(imported.config, migrated))
+            Fail(input.name + ": comparison 2: " + field + " differs between the import and the migration");
         ++compared;
     }
     Check(compared > 1000, std::to_string(compared) + " inputs compared");
+    Check(dropped > 0, std::to_string(dropped) + " of them drop MoveCrosshair=false as a reticle setting");
+}
+
+// The published build's first-run file, which is also what its players hold if
+// they never changed a setting, converts to exactly the file a fresh install
+// creates. No build shipped a config in a ZIP or a launcher seed.
+void FreshEqualsUpgradeTests(Scratch& scratch) {
+    std::cout << "Fresh install against upgrade\n";
+    const std::string committed = ReadBytes(kRepo / "HeadTracking.ini");
+
+    const fs::path upgraded = scratch.Folder("upgrade");
+    WriteBytes(upgraded / "HeadTracking.ini", PublishedFirstRun());
+    cameraunlock::config::ConfigOwner<kcd2_ht::Config> upgrade(
+        kcd2_ht::OwnerOptions((upgraded / "HeadTracking.ini").wstring()));
+    const auto loaded = upgrade.Load();
+    Check(loaded.status == cameraunlock::config::ConfigLoadStatus::Migrated
+              && ReadBytes(upgraded / "HeadTracking.ini") == committed,
+          "the published first-run file converts to the committed HeadTracking.ini byte for byte");
+    Check(Contains(loaded.log, "not carried: [ADS] AdsMode=paused")
+              && Contains(loaded.log, "not carried: [Hotkeys] AdsModeKey=0x2D"),
+          "and the log names the two ADS keys this build no longer reads");
+
+    const fs::path fresh = scratch.Folder("fresh");
+    cameraunlock::config::ConfigOwner<kcd2_ht::Config> create(
+        kcd2_ht::OwnerOptions((fresh / "HeadTracking.ini").wstring()));
+    Check(create.Load().status == cameraunlock::config::ConfigLoadStatus::Created
+              && ReadBytes(fresh / "HeadTracking.ini") == committed,
+          "a fresh install creates the committed HeadTracking.ini byte for byte");
 }
 
 }  // namespace
@@ -425,7 +597,8 @@ int main() {
         Scratch scratch;
         FrozenSourceTests();
         FirstRunTests(scratch);
-        ComparisonOne(scratch);
+        Comparisons(scratch);
+        FreshEqualsUpgradeTests(scratch);
     } catch (const std::exception& e) {
         std::cout << "  [FAIL] threw: " << e.what() << "\n";
         ++g_failures;

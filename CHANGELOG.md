@@ -12,9 +12,35 @@
   has no `Bin\Win64MasterMasterSteamPGO`; its executable sits directly in the
   package `Content` folder, and so do `HeadTracking.ini` and
   `HeadTracking.log`.
+- Added true free look on `Insert` / `Ctrl+Shift+U`: the lean stays in full
+  while you aim a bow or crossbow, instead of easing out. It is off by default,
+  and the mode you pick is saved as `[Position] TrueFreeLook`.
 
 ### Changed
 
+- `HeadTracking.ini` has a new layout. The first time this version starts, it converts the file once into the new layout and keeps the file as it was beside it as `HeadTracking.ini.pre-canonical`. `HeadTracking.ini.pre-canonical.last`, when present, is the file as it was before the most recent conversion: the mod converts the file again when it finds the older layout later, for example after an older version of the mod rewrote it.
+- Comments, and keys the mod never read, are not carried over. Nor are these, where your old file had them:
+  - A sensitivity, scale, deadzone, response curve or axis inversion you changed from its default. Set these in your tracker instead.
+  - Reticle settings, and a key that toggled the reticle.
+  - The setting for a feature that earlier versions shipped switched off while it was untested. It now follows the mod's default.
+- Hotkeys are written as key names, and each hotkey lists every key that triggers it, the Ctrl+Shift chord included: `ToggleKey=End, Ctrl+Shift+Y`.
+- An older version of the mod may not read the new layout correctly. It reads a key that moved as its own default, and it can misread a hotkey or another value that is now written as a name. To go back to an older version, first copy `HeadTracking.ini.pre-canonical` back over `HeadTracking.ini`, which restores the old file.
+- The conversion carries every setting across under its new name:
+  `[HeadTracking] UdpPort` is `[Network] UdpPort`; `EnableOnStartup` and
+  `WorldSpaceYaw` are in `[General]`; `LocalSmoothing`, `RemoteSmoothing` and
+  `MaxExtrapolationFraction` are in `[Smoothing]`; `[Position] LimitX`, `LimitY`,
+  `LimitYDown`, `LimitZ` and `LimitZBack` are `PositionLimitX`,
+  `PositionLimitY`, `PositionLimitYDown`, `PositionLimitZ` and
+  `PositionLimitZBack`; `[Position] Enabled` is the startup tracking mode, now
+  the pair `[General] RotationEnabled` and `[Position] PositionEnabled`; and
+  `[Hotkeys] PositionKey` is `CycleTrackingModeKey`.
+- The tracking mode you pick with `Page Up` and the yaw mode you pick with
+  `Page Down` are now saved to `HeadTracking.ini` as they change, and come back
+  the next time you start the game. `End` still lasts for the session only.
+- `[ADS] AdsMode` is no longer read, and the paused, marker and tracked modes
+  it chose between are gone (abebb77).
+- `[Hotkeys] AdsModeKey` is no longer read. `Insert` and `Ctrl+Shift+U` now
+  toggle true free look (abebb77).
 - Head tracking now carries straight on while you aim a bow or crossbow.
   Raising the sights no longer moves the view, and head rotation is never
   paused or measured from where the aim began. Only the lean eases out while
@@ -26,6 +52,9 @@
   `Ctrl+Shift+U`, the aim marker it could draw, and the `[ADS] AdsMode` and
   `[Hotkeys] AdsModeKey` settings. A config that still carries them loads as
   before and the two keys are ignored.
+- `MoveCrosshair`, the setting that left the game's crosshair at screen
+  centre. The crosshair now always follows your aim, and a file that turned it
+  off converts with that setting logged as not carried.
 
 ### Fixed
 

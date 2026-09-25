@@ -6,6 +6,11 @@ Move the in-game view with your real head while the mouse keeps the aim, no VR h
 > however no testing beyond that has been done - game-breaking bugs may be
 > present
 
+> **Updating from an earlier version?** `HeadTracking.ini` has a new layout.
+> The mod converts your file the first time it starts and keeps the old one as
+> `HeadTracking.ini.pre-canonical`. See [Configuration](#configuration) for what
+> is and is not carried over.
+
 ## Features
 
 - **Decoupled look and aim** - head tracking moves the camera, aim stays on your mouse or controller
@@ -106,6 +111,7 @@ Two equivalent binding sets, use whichever your keyboard has:
 | Toggle tracking                 | `End`       | `Ctrl+Shift+Y` |
 | Cycle tracking mode             | `Page Up`   | `Ctrl+Shift+G` |
 | Toggle yaw mode (world / local) | `Page Down` | `Ctrl+Shift+H` |
+| Toggle true free look           | `Insert`    | `Ctrl+Shift+U` |
 
 Head tracking pauses while the game's pause menu is open, including when opened
 with `Backspace`. Closing the menu restores tracking if you have it enabled.
@@ -119,7 +125,9 @@ with `Backspace`. Closing the menu restores tracking if you have it enabled.
 
 `Page Down` / `Ctrl+Shift+H` switches yaw between world-locked (the default, horizon-stable) and camera-local, which follows the camera's current up-axis.
 
-Every press is named in `HeadTracking.log`.
+Every press is named in `HeadTracking.log`. Every hotkey is a list of keys in
+`HeadTracking.ini`, the chords included, so you can rebind or remove any of them
+there.
 
 ### Aiming down sights
 
@@ -127,55 +135,101 @@ Head tracking stays on while you aim a bow or crossbow. The mod moves only the
 view: the aim stays on your mouse or controller, so with your head turned you
 are looking past the weapon rather than down it.
 
-Leaning eases out while the sights are up, because it would move your eye off
-them, and eases back in when you lower the weapon.
+By default the lean eases out while the sights are up, because it would move
+your eye off them, and eases back in when you lower the weapon. `Insert` /
+`Ctrl+Shift+U` switches to **true free look**, where the lean stays in full
+while you aim. It is off by default. The mod saves the mode you pick, so it
+holds the next time you start the game.
 
 ## Configuration
 
-`HeadTracking.ini` is written next to `KingdomCome.exe` the first time you launch with the mod installed, in the same folder you copied the `.asi` into.
+<!-- cameraunlock:config -->
+The mod reads its settings from `HeadTracking.ini` in the game folder, at one of these paths depending on the store the game came from:
+
+- `Bin\Win64MasterMasterSteamPGO\HeadTracking.ini`
+- `HeadTracking.ini`
+
+It creates the file when it starts and finds none. Edit it with any text editor.
+
+Earlier versions of the mod used an older layout for this file. The first time this version starts, it converts the file once into the layout below and keeps the file as it was beside it as `HeadTracking.ini.pre-canonical`. `HeadTracking.ini.pre-canonical.last`, when present, is the file as it was before the most recent conversion: the mod converts the file again when it finds the older layout later, for example after an older version of the mod rewrote it.
+
+Comments, and keys the mod never read, are not carried over. Nor are these, where your old file had them:
+
+- Reticle settings, and a key that toggled the reticle.
+- A sensitivity, scale, deadzone, response curve or axis inversion you changed from its default. Set these in your tracker instead.
+- The setting for a feature that earlier versions shipped switched off while it was untested. It now follows the mod's default.
+
+An older version of the mod may not read the new layout correctly. It reads a key that moved as its own default, and it can misread a hotkey or another value that is now written as a name. To go back to an older version, first copy `HeadTracking.ini.pre-canonical` back over `HeadTracking.ini`, which restores the old file.
+
+With every setting at its default, the file reads:
 
 ```ini
-[HeadTracking]
+; Kingdom Come: Deliverance II head tracking settings.
+; Comments start with ; and go on their own line. Text after a value is part of the value.
+; Hotkeys are key names such as End, PageUp or Ctrl+Shift+Y. Separate several with commas; leave empty for none.
+
+[CameraUnlock]
+; Written by the mod. Leave this section in place.
+ConfigFormat=1
+
+[Network]
+; UDP port the mod receives tracker data on (OpenTrack protocol).
 UdpPort=4242
-; Start with head tracking already on.
+
+[General]
+; true: head tracking is on when the game starts. ToggleKey turns it on and off.
 EnableOnStartup=true
-; Yaw about the world up-axis so the horizon stays level. Off yaws about
-; the camera's own up-axis, which leans the view on pitched turns.
+; true: yaw turns around the world's up axis. false: around the camera's own up axis.
 WorldSpaceYaw=true
-; Move the game's own crosshair to where the shot actually goes. It is
-; pinned to screen centre, which stops being the aim point as soon as you
-; turn your head. Off leaves the HUD untouched.
-MoveCrosshair=true
-; Smoothing for a tracker running on this machine (loopback). 0 = none.
+; true: turning your head turns the view.
+; Tracking mode at startup, with PositionEnabled. The mode hotkey changes both.
+RotationEnabled=true
+
+[Smoothing]
+; Smoothing when the tracker runs on this PC. 0 is the least, 1 the most.
 LocalSmoothing=0.0
-; Smoothing for a tracker reaching this machine over the network. A tracker
-; sending to this PC's LAN address instead of 127.0.0.1 counts as remote -
-; the classifier sees a transport, not a machine.
+; Smoothing when the tracker is another device on the network, such as a phone.
+; 0 is the least, 1 the most.
 RemoteSmoothing=0.15
-; How far past the newest tracker sample the mod may extrapolate, as a
-; fraction of one sample interval. Fills frames between samples on a
-; high-refresh display.
+; How far past the newest tracker sample the view may carry on moving,
+; as a fraction of the time between samples. 0 only moves between samples.
 MaxExtrapolationFraction=0.5
 
 [Position]
-; 6DOF lean. Limits are metres.
-Enabled=true
-; Sideways lean, applied as plus or minus this value.
-LimitX=0.30
-; Up, and down, kept separate so a crouch can have a tighter range.
-LimitY=0.20
-LimitYDown=0.20
-; Forward lean, then backward. Backward is deliberately small so the camera
-; does not pull back through Henry's head.
-LimitZ=0.40
-LimitZBack=0.10
+; true: moving your head moves the view.
+; Tracking mode at startup, with RotationEnabled. The mode hotkey changes both.
+PositionEnabled=true
+; false: while you aim down the sights, leaning keeps your eye on the sights.
+; true: the weapon stays put and your head moves freely around it (true free look).
+TrueFreeLook=false
+; How far, in metres, leaning left or right can move the view.
+PositionLimitX=0.3
+; How far, in metres, raising your head can move the view.
+PositionLimitY=0.2
+; How far, in metres, lowering your head can move the view.
+PositionLimitYDown=0.2
+; How far, in metres, leaning forward can move the view.
+PositionLimitZ=0.4
+; How far, in metres, leaning back can move the view.
+PositionLimitZBack=0.1
 
 [Hotkeys]
-; Windows virtual-key codes. Ctrl+Shift+Y / G / H work as alternatives.
-ToggleKey=0x23
-PositionKey=0x21
-YawModeKey=0x22
+; Turns head tracking on and off.
+ToggleKey=End, Ctrl+Shift+Y
+; Changes the tracking mode: rotation and position, rotation only, position only.
+CycleTrackingModeKey=PageUp, Ctrl+Shift+G
+; Switches yaw between the world's up axis and the camera's own (WorldSpaceYaw).
+YawModeKey=PageDown, Ctrl+Shift+H
+; Switches between keeping your eye on the sights and true free look (TrueFreeLook).
+TrueFreeLookKey=Insert, Ctrl+Shift+U
 ```
+<!-- /cameraunlock:config -->
+
+The mod saves the tracking mode (`Page Up`), the yaw mode (`Page Down`) and
+true free look (`Insert`) to this file the moment you change them, so each one
+comes back the next time you start the game. Turning head tracking on or off
+with `End` lasts for the session only: `EnableOnStartup` decides whether it is
+on when the game starts.
 
 There is deliberately no sensitivity or axis-inversion setting. Shape the pose in your tracker app instead, so one profile behaves the same in every game.
 
@@ -209,6 +263,10 @@ Everything the mod does is written to `HeadTracking.log` next to `KingdomCome.ex
 **The weapon is off to one side when I aim**
 
 - Your head is turned: the weapon stays on your aim and you are looking past it. Turn back to it, or move your aim to where you are looking.
+
+**Leaning still moves the view while I aim**
+
+- You are in true free look, which keeps the lean while you aim. Press `Insert` / `Ctrl+Shift+U` to go back to the default, which eases the lean out while the sights are up.
 
 ## Updating
 

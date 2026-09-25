@@ -25,6 +25,7 @@ target_compile_definitions(kcd2_config_oracle PRIVATE
 add_executable(kcd_config_differential
     differential_tests.cpp
     ${CMAKE_SOURCE_DIR}/src/config.cpp
+    ${CMAKE_SOURCE_DIR}/src/exe_paths.cpp
     ${CMAKE_SOURCE_DIR}/src/hotkey_bindings.cpp
     ${CMAKE_SOURCE_DIR}/src/legacy_config/legacy_config.cpp
 )

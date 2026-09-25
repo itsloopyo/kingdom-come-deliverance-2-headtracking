@@ -1,212 +1,244 @@
-// Characterization tests for the INI contract: the keys the mod reads, the
-// defaults it falls back to, and the agreement between the file it writes on
-// first run and the defaults compiled into Config. A key renamed on one side
-// only would otherwise ship as a setting that silently does nothing.
+// The canonical HeadTracking.ini: the committed file the table renders, what the
+// owner creates and reads, what each hotkey saves and what it may not, and the
+// frozen legacy reader's own contract.
 
 #include "config.h"
 
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <stdexcept>
 #include <string>
+#include <vector>
 
 #include <windows.h>
 
+#include <cameraunlock/config/config_owner.h>
+#include <cameraunlock/input/key_bindings.h>
+
+#include "hotkey_bindings.h"
+#include "legacy_config/legacy_config.h"
 #include "test_support.h"
 
 namespace {
 
+namespace fs = std::filesystem;
 using kcd_tests::Check;
 using kcd_tests::NearEqual;
+using cameraunlock::config::ConfigLoadStatus;
+using cameraunlock::config::ConfigOwner;
+using cameraunlock::config::ConfigSaveStatus;
+using cameraunlock::input::KeyBinding;
+using cameraunlock::input::KeyModifiers;
 
-std::string MakeTempDir()
+const fs::path kCommitted = fs::path(KCD2_REPO_DIR) / "HeadTracking.ini";
+
+std::string ReadBytes(const fs::path& path)
 {
-    char tempRoot[MAX_PATH]{};
-    GetTempPathA(MAX_PATH, tempRoot);
-    std::string dir = std::string(tempRoot) + "kcd-ht-config-tests";
-    CreateDirectoryA(dir.c_str(), nullptr);
-    DeleteFileA((dir + "\\HeadTracking.ini").c_str());
+    std::ifstream in(path, std::ios::binary);
+    std::ostringstream buffer;
+    buffer << in.rdbuf();
+    return buffer.str();
+}
+
+void WriteBytes(const fs::path& path, const std::string& bytes)
+{
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    out << bytes;
+}
+
+fs::path FreshDir(const char* name)
+{
+    const fs::path dir = fs::temp_directory_path() / "kcd-ht-config-tests" / name;
+    std::error_code ignored;
+    fs::remove_all(dir, ignored);
+    fs::create_directories(dir);
     return dir;
 }
 
-void WriteIni(const std::string& dir, const char* body)
+// The lines of @p a that differ from @p b, which must have as many.
+std::vector<std::string> ChangedLines(const std::string& a, const std::string& b)
 {
-    FILE* file = nullptr;
-    fopen_s(&file, (dir + "\\HeadTracking.ini").c_str(), "w");
-    if (file == nullptr) return;
-    std::fputs(body, file);
-    std::fclose(file);
+    std::vector<std::string> la, lb, changed;
+    std::istringstream sa(a), sb(b);
+    for (std::string line; std::getline(sa, line);) la.push_back(line);
+    for (std::string line; std::getline(sb, line);) lb.push_back(line);
+    if (la.size() != lb.size()) return {"(line count differs)"};
+    for (std::size_t i = 0; i < la.size(); ++i)
+        if (la[i] != lb[i]) changed.push_back(lb[i]);
+    return changed;
 }
 
-void MissingFileTests(int& failures)
+std::string Render()
 {
-    const std::string dir = MakeTempDir();
+    cameraunlock::config::RenderHeader header;
+    header.display_name = kcd2_ht::kGameDisplayName;
+    const auto table = kcd2_ht::ConfigTableFor();
+    return cameraunlock::config::RenderCanonical(table, table.defaults(), header);
+}
 
-    kcd2_ht::Config config;
-    kcd2_ht::LoadConfig(dir, config);
+void CommittedFileTests(int& failures)
+{
+    Check(failures, ReadBytes(kCommitted) == Render(),
+          "HeadTracking.ini is the table's render of its defaults (pixi run render-config rewrites it)");
 
-    Check(failures, config.udp_port == 4242, "a missing INI leaves the OpenTrack port at 4242");
-    Check(failures, config.enable_on_startup, "a missing INI leaves tracking enabled on startup");
-    Check(failures, config.world_space_yaw, "a missing INI leaves yaw horizon-locked");
-    Check(failures, config.move_crosshair,
-          "a missing INI still moves the game's crosshair onto the aim point");
-    Check(failures, NearEqual(config.local_smoothing, 0.0f),
-          "local smoothing defaults to 0 - a tracker on this machine is already stable");
-    Check(failures, NearEqual(config.remote_smoothing, 0.15f),
-          "remote smoothing defaults to 0.15 for a phone over WiFi");
-    Check(failures, config.position_enabled, "position tracking defaults on");
-    Check(failures, NearEqual(config.limit_z, 0.40f) && NearEqual(config.limit_z_back, 0.10f),
+    const fs::path dir = FreshDir("created");
+    ConfigOwner<kcd2_ht::Config> owner(kcd2_ht::OwnerOptions((dir / "HeadTracking.ini").wstring()));
+    const auto loaded = owner.Load();
+    Check(failures, loaded.status == ConfigLoadStatus::Created, "a missing file is created");
+    Check(failures, ReadBytes(dir / "HeadTracking.ini") == ReadBytes(kCommitted),
+          "and holds the committed file byte for byte");
+
+    const kcd2_ht::Config& c = loaded.config;
+    Check(failures, c.udp_port == 4242 && c.enable_on_startup && c.world_space_yaw
+                 && c.rotation_enabled && c.position_enabled && !c.true_free_look,
+          "defaults: port 4242, on at startup, world yaw, 6DOF, sights locked");
+    Check(failures, NearEqual(c.local_smoothing, 0.0f) && NearEqual(c.remote_smoothing, 0.15f)
+                 && NearEqual(c.max_extrapolation_fraction, 0.5f),
+          "defaults: smoothing 0 local, 0.15 remote, extrapolation 0.5");
+    Check(failures, NearEqual(c.limit_z, 0.40f) && NearEqual(c.limit_z_back, 0.10f),
           "the Z limits default asymmetric: more room to lean in than back");
+    Check(failures, c.toggle_key == "End, Ctrl+Shift+Y"
+                 && c.cycle_tracking_mode_key == "PageUp, Ctrl+Shift+G"
+                 && c.yaw_mode_key == "PageDown, Ctrl+Shift+H"
+                 && c.true_free_look_key == "Insert, Ctrl+Shift+U",
+          "the hotkeys default to the fleet's nav keys and chords");
+
+    const auto again = owner.Reload();
+    Check(failures, again.status == cameraunlock::config::ConfigReloadStatus::Unchanged,
+          "reloading the created file finds nothing to apply");
 }
 
-void ParsingTests(int& failures)
+void CanonicalReadTests(int& failures)
 {
-    const std::string dir = MakeTempDir();
-    WriteIni(dir,
-        "[HeadTracking]\nUdpPort=5252\nEnableOnStartup=0\nWorldSpaceYaw=0\nMoveCrosshair=0\n"
-        "LocalSmoothing=0.25\nRemoteSmoothing=0.75\nMaxExtrapolationFraction=0\n"
-        "[Position]\nEnabled=0\n"
-        "LimitX=0.11\nLimitY=0.22\nLimitYDown=0.05\nLimitZ=0.33\nLimitZBack=0.44\n"
-        "[Hotkeys]\nToggleKey=0x51\nPositionKey=0x52\nYawModeKey=0x53\n");
+    const fs::path dir = FreshDir("canonical");
+    std::string text = ReadBytes(kCommitted);
+    const auto set = [&text](const std::string& from, const std::string& to) {
+        const std::size_t at = text.find(from);
+        if (at == std::string::npos) throw std::logic_error(from + " is not in the committed file");
+        text.replace(at, from.size(), to);
+    };
+    set("UdpPort=4242", "UdpPort=5252");
+    set("EnableOnStartup=true", "EnableOnStartup=false");
+    set("WorldSpaceYaw=true", "WorldSpaceYaw=false");
+    set("RotationEnabled=true", "RotationEnabled=false");
+    set("TrueFreeLook=false", "TrueFreeLook=true");
+    set("MaxExtrapolationFraction=0.5", "MaxExtrapolationFraction=0.0");
+    set("PositionLimitYDown=0.2", "PositionLimitYDown=0.05");
+    set("ToggleKey=End, Ctrl+Shift+Y", "ToggleKey=F9");
+    WriteBytes(dir / "HeadTracking.ini", text);
 
-    kcd2_ht::Config config;
-    kcd2_ht::LoadConfig(dir, config);
-
-    Check(failures, config.udp_port == 5252, "UdpPort is read");
-    Check(failures, !config.enable_on_startup && !config.world_space_yaw
-                 && !config.move_crosshair,
-          "the booleans are read");
-    Check(failures, NearEqual(config.local_smoothing, 0.25f)
-                 && NearEqual(config.remote_smoothing, 0.75f),
-          "both smoothing values are read");
-    Check(failures, NearEqual(config.max_extrapolation_fraction, 0.0f),
-          "extrapolation can be turned off");
-    Check(failures, !config.position_enabled, "position tracking can be turned off");
-    Check(failures, NearEqual(config.limit_x, 0.11f) && NearEqual(config.limit_y, 0.22f)
-                 && NearEqual(config.limit_y_down, 0.05f) && NearEqual(config.limit_z, 0.33f)
-                 && NearEqual(config.limit_z_back, 0.44f),
-          "every position limit is read, including the asymmetric LimitYDown");
-    Check(failures, config.toggle_key == 0x51 && config.position_key == 0x52
-                 && config.yaw_mode_key == 0x53,
-          "the hotkeys are read as hex");
+    ConfigOwner<kcd2_ht::Config> owner(kcd2_ht::OwnerOptions((dir / "HeadTracking.ini").wstring()));
+    const auto loaded = owner.Load();
+    const kcd2_ht::Config& c = loaded.config;
+    Check(failures, loaded.status == ConfigLoadStatus::Canonical && loaded.diagnostics.empty(),
+          "a stamped file is read as canonical with nothing to report");
+    Check(failures, c.udp_port == 5252 && !c.enable_on_startup && !c.world_space_yaw
+                 && !c.rotation_enabled && c.position_enabled && c.true_free_look
+                 && NearEqual(c.max_extrapolation_fraction, 0.0f)
+                 && NearEqual(c.limit_y_down, 0.05f) && c.toggle_key == "F9",
+          "every edited row is read");
+    Check(failures, kcd2_ht::StartupMode(c) == cameraunlock::TrackingMode::PositionOnly,
+          "RotationEnabled=false with PositionEnabled=true starts position only");
 }
 
-// An INI predating the LimitYDown key still has to give symmetric vertical travel.
-// Falling back to the struct default instead left a player who set LimitY=0.40 with
-// 0.40 m up and 0.20 m down, and nothing in the log said so.
-void MirroredVerticalLimitTests(int& failures)
+void SaveTests(int& failures)
 {
-    const std::string wide = MakeTempDir();
-    WriteIni(wide, "[Position]\nLimitX=0.30\nLimitY=0.40\nLimitZ=0.40\nLimitZBack=0.10\n");
+    const fs::path dir = FreshDir("save");
+    const fs::path file = dir / "HeadTracking.ini";
+    ConfigOwner<kcd2_ht::Config> owner(kcd2_ht::OwnerOptions(file.wstring()));
+    owner.Load();
 
-    kcd2_ht::Config raised;
-    kcd2_ht::LoadConfig(wide, raised);
+    std::string before = ReadBytes(file);
+    Check(failures, owner.Save([](kcd2_ht::Config& c) { c.world_space_yaw = false; }).status
+                     == ConfigSaveStatus::Saved,
+          "the yaw mode saves");
+    Check(failures, ChangedLines(before, ReadBytes(file)) == std::vector<std::string>{"WorldSpaceYaw=false\r"},
+          "and changes the WorldSpaceYaw line and no other byte");
+
+    before = ReadBytes(file);
+    const cameraunlock::TrackingModeChannels rotationOnly =
+        cameraunlock::EncodeTrackingMode(cameraunlock::TrackingMode::RotationOnly);
+    owner.Save([rotationOnly](kcd2_ht::Config& c) {
+        c.rotation_enabled = rotationOnly.rotation_enabled;
+        c.position_enabled = rotationOnly.position_enabled;
+    });
+    Check(failures, ChangedLines(before, ReadBytes(file)) == std::vector<std::string>{"PositionEnabled=false\r"},
+          "a mode change to rotation only writes the pair, of which only PositionEnabled differs");
+
+    before = ReadBytes(file);
+    owner.Save([](kcd2_ht::Config& c) { c.true_free_look = true; });
+    Check(failures, ChangedLines(before, ReadBytes(file)) == std::vector<std::string>{"TrueFreeLook=true\r"},
+          "true free look saves its own line and no other byte");
+
+    bool refused = false;
+    try {
+        owner.Save([](kcd2_ht::Config& c) { c.enable_on_startup = false; });
+    } catch (const std::logic_error&) {
+        refused = true;
+    }
+    Check(failures, refused, "EnableOnStartup is not Writable, so nothing End does can reach the file");
+
+    ConfigOwner<kcd2_ht::Config> next(kcd2_ht::OwnerOptions(file.wstring()));
+    const kcd2_ht::Config restarted = next.Load().config;
+    Check(failures, !restarted.world_space_yaw && restarted.rotation_enabled && !restarted.position_enabled
+                 && restarted.true_free_look && restarted.enable_on_startup,
+          "every saved toggle comes back at the next start");
+}
+
+void HotkeyBindingTests(int& failures)
+{
+    const kcd2_ht::HotkeyBindings b = kcd2_ht::BindingsFor(kcd2_ht::Config{});
+    constexpr KeyModifiers kChord = KeyModifiers::kCtrl | KeyModifiers::kShift;
+    Check(failures, b.toggle == std::vector<KeyBinding>{{KeyModifiers::kNone, 0x23}, {kChord, 0x59}},
+          "End and Ctrl+Shift+Y toggle tracking");
+    Check(failures, b.cycle_tracking_mode == std::vector<KeyBinding>{{KeyModifiers::kNone, 0x21}, {kChord, 0x47}},
+          "Page Up and Ctrl+Shift+G cycle the tracking mode");
+    Check(failures, b.yaw_mode == std::vector<KeyBinding>{{KeyModifiers::kNone, 0x22}, {kChord, 0x48}},
+          "Page Down and Ctrl+Shift+H switch the yaw mode");
+    Check(failures, b.true_free_look == std::vector<KeyBinding>{{KeyModifiers::kNone, 0x2D}, {kChord, 0x55}},
+          "Insert and Ctrl+Shift+U switch true free look");
+}
+
+// The frozen reader, as the published builds read HeadTracking.ini.
+void LegacyReaderTests(int& failures)
+{
+    const auto read = [](const char* name, const char* body) {
+        const fs::path dir = FreshDir(name);
+        WriteBytes(dir / "HeadTracking.ini", body);
+        kcd2_ht::legacy::Config config;
+        kcd2_ht::legacy::LoadConfig(dir.string(), config);
+        return config;
+    };
+
+    const auto raised = read("legacy-limit-y", "[Position]\nLimitY=0.40\n");
     Check(failures, NearEqual(raised.limit_y, 0.40f) && NearEqual(raised.limit_y_down, 0.40f),
-          "LimitY=0.40 without LimitYDown gives 0.40 m of travel each way, not 0.20 m down");
+          "legacy: LimitY without LimitYDown gives the same travel each way");
 
-    const std::string tight = MakeTempDir();
-    WriteIni(tight, "[Position]\nLimitY=0.05\n");
+    const auto hotkeys = read("legacy-hotkeys", "[Hotkeys]\nToggleKey=0\nPositionKey=0x1FF\nYawModeKey=zzz\n");
+    Check(failures, hotkeys.toggle_key == 0x23 && hotkeys.position_key == 0x21 && hotkeys.yaw_mode_key == 0x22,
+          "legacy: a hotkey outside 0x01-0xFE keeps its default");
 
-    kcd2_ht::Config lowered;
-    kcd2_ht::LoadConfig(tight, lowered);
-    Check(failures, NearEqual(lowered.limit_y, 0.05f) && NearEqual(lowered.limit_y_down, 0.05f),
-          "LimitY=0.05 without LimitYDown gives 0.05 m of travel each way");
-
-    const std::string both = MakeTempDir();
-    WriteIni(both, "[Position]\nLimitY=0.40\nLimitYDown=0.05\n");
-
-    kcd2_ht::Config asymmetric;
-    kcd2_ht::LoadConfig(both, asymmetric);
-    Check(failures, NearEqual(asymmetric.limit_y, 0.40f)
-                 && NearEqual(asymmetric.limit_y_down, 0.05f),
-          "an explicit LimitYDown still overrides the mirrored value");
-}
-
-void ValidationTests(int& failures)
-{
-    const std::string dir = MakeTempDir();
-    WriteIni(dir,
-        "[HeadTracking]\nUdpPort=99999\nLocalSmoothing=nan\nRemoteSmoothing=1e400\n"
-        "[Position]\nLimitZ=-3\n");
-
-    kcd2_ht::Config config;
-    kcd2_ht::LoadConfig(dir, config);
-
-    Check(failures, config.udp_port == 4242, "an out-of-range port falls back to the default");
-    Check(failures, NearEqual(config.local_smoothing, 0.0f),
-          "a NaN smoothing value falls back to the default rather than poisoning the filter");
-    Check(failures, config.remote_smoothing >= 0.0f && config.remote_smoothing <= 1.0f,
-          "an infinite smoothing value is clamped into range");
-    Check(failures, config.limit_z > 0.0f, "a negative position limit is rejected");
-}
-
-// A hotkey code is the one setting whose failure is completely silent: the
-// poller skips an entry whose code is 0, so a mistyped ToggleKey leaves the
-// player unable to turn tracking off with nothing anywhere saying why.
-void HotkeyValidationTests(int& failures)
-{
-    const std::string dir = MakeTempDir();
-    WriteIni(dir, "[Hotkeys]\nToggleKey=0\nPositionKey=0x1FF\nYawModeKey=zzz\n");
-
-    kcd2_ht::Config config;
-    kcd2_ht::LoadConfig(dir, config);
-
-    Check(failures, config.toggle_key == 0x23,
-          "ToggleKey=0 falls back to End rather than silently unbinding the toggle");
-    Check(failures, config.position_key == 0x21,
-          "a hotkey past the last virtual-key code falls back to Page Up");
-    Check(failures, config.yaw_mode_key == 0x22,
-          "a hotkey that is not a number at all falls back to Page Down");
-
-    const std::string valid = MakeTempDir();
-    WriteIni(valid, "[Hotkeys]\nToggleKey=0x01\nPositionKey=0xFE\n");
-
-    kcd2_ht::Config edges;
-    kcd2_ht::LoadConfig(valid, edges);
-    Check(failures, edges.toggle_key == 0x01 && edges.position_key == 0xFE,
-          "both ends of the virtual-key range are still accepted");
-}
-
-void DefaultFileMatchesDefaultsTests(int& failures)
-{
-    const std::string dir = MakeTempDir();
-    kcd2_ht::WriteDefaultConfigIfMissing(dir);
-
-    kcd2_ht::Config fromFile;
-    kcd2_ht::LoadConfig(dir, fromFile);
-    const kcd2_ht::Config compiled;
-
-    Check(failures, fromFile.udp_port == compiled.udp_port
-                 && fromFile.enable_on_startup == compiled.enable_on_startup
-                 && fromFile.world_space_yaw == compiled.world_space_yaw
-                 && fromFile.move_crosshair == compiled.move_crosshair
-                 && NearEqual(fromFile.local_smoothing, compiled.local_smoothing)
-                 && NearEqual(fromFile.remote_smoothing, compiled.remote_smoothing)
-                 && NearEqual(fromFile.max_extrapolation_fraction,
-                              compiled.max_extrapolation_fraction)
-                 && fromFile.position_enabled == compiled.position_enabled
-                 && NearEqual(fromFile.limit_x, compiled.limit_x)
-                 && NearEqual(fromFile.limit_y, compiled.limit_y)
-                 && NearEqual(fromFile.limit_y_down, compiled.limit_y_down)
-                 && NearEqual(fromFile.limit_z, compiled.limit_z)
-                 && NearEqual(fromFile.limit_z_back, compiled.limit_z_back)
-                 && fromFile.toggle_key == compiled.toggle_key
-                 && fromFile.position_key == compiled.position_key
-                 && fromFile.yaw_mode_key == compiled.yaw_mode_key,
-          "the INI written on first run round-trips to the compiled defaults");
+    const auto bad = read("legacy-values", "[HeadTracking]\nUdpPort=99999\nLocalSmoothing=nan\n[Position]\nLimitZ=-3\n");
+    Check(failures, bad.udp_port == 4242 && NearEqual(bad.local_smoothing, 0.0f) && bad.limit_z > 0.0f,
+          "legacy: an out-of-range port, a NaN and a negative limit do not get through");
 }
 
 }  // namespace
+
+std::string RenderCommittedConfig() { return Render(); }
 
 int RunConfigTests()
 {
     int failures = 0;
     std::cout << "Config tests\n";
 
-    MissingFileTests(failures);
-    ParsingTests(failures);
-    MirroredVerticalLimitTests(failures);
-    ValidationTests(failures);
-    HotkeyValidationTests(failures);
-    DefaultFileMatchesDefaultsTests(failures);
+    CommittedFileTests(failures);
+    CanonicalReadTests(failures);
+    SaveTests(failures);
+    HotkeyBindingTests(failures);
+    LegacyReaderTests(failures);
 
     return kcd_tests::Report("Config tests", failures);
 }

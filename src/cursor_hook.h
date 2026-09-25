@@ -18,9 +18,7 @@
 
 namespace kcd2_ht::cursor
 {
-    // @p moveCrosshair decides whether the aim offset is applied; off, the
-    // detour passes every call straight through.
-    bool Install(std::uintptr_t moduleBase, bool moveCrosshair);
+    bool Install(std::uintptr_t moduleBase);
 
     // Called from the view hook on every frame tracking is applied. Doubles as
     // the liveness signal: when these stop arriving the cursor goes back to

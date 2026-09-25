@@ -1,32 +1,29 @@
 #include "hotkey_bindings.h"
 
+#include <stdexcept>
+#include <string>
+
 namespace kcd2_ht
 {
     namespace
     {
-        using cameraunlock::input::KeyBinding;
-        using cameraunlock::input::KeyModifiers;
-
-        constexpr KeyModifiers kChord = KeyModifiers::kCtrl | KeyModifiers::kShift;
-
-        // Ctrl+Shift+<letter> from the T/Y/U/G/H/J block, in the order AGENTS.md
-        // fixes so the same action lands on the same chord in every mod.
-        // Ctrl+Shift+T is left free: it was the recenter chord before mods
-        // stopped keeping a centre, so reusing it would fire on muscle memory.
-        constexpr int kVkY = 0x59;
-        constexpr int kVkG = 0x47;
-        constexpr int kVkH = 0x48;
+        std::vector<cameraunlock::input::KeyBinding> Parse(const char* key, const std::string& list)
+        {
+            const cameraunlock::input::KeyBindingsParseResult parsed =
+                cameraunlock::input::ParseKeyBindings(list);
+            if (!parsed.ok())
+                throw std::logic_error(std::string(key) + "=" + list + " does not parse: " + parsed.error);
+            return parsed.bindings;
+        }
     }
 
     HotkeyBindings BindingsFor(const Config& config)
     {
         HotkeyBindings bindings;
-        bindings.toggle = {KeyBinding{KeyModifiers::kNone, config.toggle_key},
-                           KeyBinding{kChord, kVkY}};
-        bindings.cycle_tracking_mode = {KeyBinding{KeyModifiers::kNone, config.position_key},
-                                        KeyBinding{kChord, kVkG}};
-        bindings.yaw_mode = {KeyBinding{KeyModifiers::kNone, config.yaw_mode_key},
-                             KeyBinding{kChord, kVkH}};
+        bindings.toggle = Parse("ToggleKey", config.toggle_key);
+        bindings.cycle_tracking_mode = Parse("CycleTrackingModeKey", config.cycle_tracking_mode_key);
+        bindings.yaw_mode = Parse("YawModeKey", config.yaw_mode_key);
+        bindings.true_free_look = Parse("TrueFreeLookKey", config.true_free_look_key);
         return bindings;
     }
 }

@@ -50,6 +50,9 @@ namespace kcd2_ht
         HMODULE g_selfReference = nullptr;
 
         Config g_config;
+        // Built before anything reads HeadTracking.ini and never destroyed while
+        // the hotkey thread that saves through it runs.
+        std::unique_ptr<cameraunlock::config::ConfigOwner<Config>> g_owner;
 
         std::unique_ptr<cameraunlock::UdpReceiver> g_receiver;
         std::unique_ptr<Session> g_session;
@@ -194,6 +197,7 @@ namespace kcd2_ht
 
             Runtime().trackingEnabled.store(g_config.enable_on_startup);
             Runtime().worldSpaceYaw.store(g_config.world_space_yaw);
+            Runtime().trueFreeLook.store(g_config.true_free_look);
             return bound;
         }
 
@@ -208,15 +212,17 @@ namespace kcd2_ht
 
         void LogConfig()
         {
-            Log::Line("config: port=%d enabled=%s worldYaw=%s crosshair=%s local=%.2f remote=%.2f "
-                      "pos=%s limits=(x %.2f, y +%.2f/-%.2f, z %.2f fwd/%.2f back)",
+            Log::Line("config: port=%d enabled=%s worldYaw=%s rotation=%s pos=%s trueFreeLook=%s "
+                      "local=%.2f remote=%.2f "
+                      "limits=(x %.2f, y +%.2f/-%.2f, z %.2f fwd/%.2f back)",
                       g_config.udp_port,
                       g_config.enable_on_startup ? "yes" : "no",
                       g_config.world_space_yaw ? "yes" : "no",
-                      g_config.move_crosshair ? "moved" : "stock",
+                      g_config.rotation_enabled ? "on" : "off",
+                      g_config.position_enabled ? "on" : "off",
+                      g_config.true_free_look ? "on" : "off",
                       static_cast<double>(g_config.local_smoothing),
                       static_cast<double>(g_config.remote_smoothing),
-                      g_config.position_enabled ? "on" : "off",
                       static_cast<double>(g_config.limit_x),
                       static_cast<double>(g_config.limit_y),
                       static_cast<double>(g_config.limit_y_down),
@@ -244,10 +250,11 @@ namespace kcd2_ht
                                 " is held by another app (a game you left running, or OpenTrack"
                                 " bound as a receiver) - close it and tracking starts within a"
                                 " second, no restart needed";
-            Log::Line("init complete. End = toggle tracking, Page Up = cycle mode (6DOF / "
-                      "rotation only / lean only), Page Down = yaw mode "
-                      "(chords Ctrl+Shift+Y/G/H)."
+            Log::Line("init complete. Toggle tracking: %s. Cycle mode (6DOF / rotation only / "
+                      "lean only): %s. Yaw mode: %s. True free look: %s."
                       " %s. Centre in your tracker app - this mod keeps no centre of its own.",
+                      g_config.toggle_key.c_str(), g_config.cycle_tracking_mode_key.c_str(),
+                      g_config.yaw_mode_key.c_str(), g_config.true_free_look_key.c_str(),
                       portLine.c_str());
         }
 
@@ -256,9 +263,14 @@ namespace kcd2_ht
             OpenLog();
             cameraunlock::diagnostics::InstallCrashHandler();
 
-            const std::string exeDir = ExeDirectoryNarrow();
-            WriteDefaultConfigIfMissing(exeDir);
-            LoadConfig(exeDir, g_config);
+            // Loads, converts an older file or creates the file, on this thread
+            // rather than under the loader lock, and after the log is open so its
+            // lines have somewhere to go.
+            g_owner = std::make_unique<cameraunlock::config::ConfigOwner<Config>>(
+                OwnerOptions(ExeDirectory() + L"\\HeadTracking.ini"));
+            const cameraunlock::config::ConfigLoadResult<Config> loaded = g_owner->Load();
+            for (const std::string& line : loaded.log) Log::Line("%s", line.c_str());
+            g_config = loaded.config;
             LogConfig();
 
             HMODULE module = WaitForGameModule();
@@ -273,9 +285,9 @@ namespace kcd2_ht
             const bool portBound = StartTracking();
             const auto moduleBase = reinterpret_cast<std::uintptr_t>(module);
             if (!view_hook::Install(moduleBase, *g_session, &LogHeartbeat)) return;
-            cursor::Install(moduleBase, g_config.move_crosshair);
+            cursor::Install(moduleBase);
 
-            g_hotkeys = StartHotkeys(*g_session, g_config);
+            g_hotkeys = StartHotkeys(*g_session, g_config, *g_owner);
             LogReadyLine(portBound);
         }
 

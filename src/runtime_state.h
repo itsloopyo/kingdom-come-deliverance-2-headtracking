@@ -24,6 +24,9 @@ namespace kcd2_ht
         // true = yaw about the world up-axis (horizon-locked); false = yaw about
         // the camera's own up-axis.
         std::atomic<bool> worldSpaceYaw{true};
+        // false = the lean eases out while a bow or crossbow is aimed (sights
+        // locked); true = it stays in full (true free look).
+        std::atomic<bool> trueFreeLook{false};
     };
 
     inline RuntimeState& Runtime()

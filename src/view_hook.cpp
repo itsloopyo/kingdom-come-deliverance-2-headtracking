@@ -103,8 +103,10 @@ namespace kcd2_ht::view_hook
             // What the sights are doing to the pose, decided before it is
             // composed onto the camera so everything downstream - the write,
             // the frustum rebuild and the reticle projection - agrees on one
-            // pose. Rotation passes through; the lean eases out while aiming.
-            ads::Apply(pose, GetTickCount64(), game_state::IsAiming(g_moduleBase));
+            // pose. Rotation passes through; the lean eases out while aiming
+            // unless true free look is on.
+            ads::Apply(pose, GetTickCount64(), game_state::IsAiming(g_moduleBase),
+                       Runtime().trueFreeLook.load());
 
             const auto& offsets = builds::Offsets();
             auto* cameraBytes = reinterpret_cast<std::uint8_t*>(self) + offsets.kCViewCameraOffset;
