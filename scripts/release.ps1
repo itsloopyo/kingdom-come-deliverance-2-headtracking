@@ -21,6 +21,22 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# Owner decision pending. Retiring the ADS cycle (abebb77) took the DX12 aim
+# marker with it, and that marker was the owner's pick for the crossbow, which
+# showed no aim marker of its own when tested. This sits above the notices sync
+# because that sync can commit, and above the nightly dispatch so a dev build is
+# held too.
+throw @'
+Release blocked: bow and crossbow aiming are unverified in game since the ADS aim marker was removed.
+Before any release or nightly:
+  1. In game, raise a bow, then a crossbow, and turn your head 15-20 degrees each way.
+     The weapon must slide across the screen with the scenery, still seen down its sights.
+  2. With the head turned, loose at a wall. The bolt or arrow must land on the weapon's line, not at screen centre.
+  3. If the crossbow aim point is still ambiguous without a marker, the owner rules whether this game
+     gets an exception to the no-ADS-marker rule (shooter-ads-handling, "Reticles and markers").
+Then delete this block from scripts/release.ps1.
+'@
+
 # THIRD-PARTY-NOTICES.md names the cameraunlock-core commit compiled into the
 # release ZIPs, and bumping the submodule does not touch it. Packaging refuses
 # to ship that mismatch, so a bump with no notices edit stopped the release
