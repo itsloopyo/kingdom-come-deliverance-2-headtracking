@@ -50,7 +50,7 @@ namespace kcd2_ht
         HMODULE g_selfReference = nullptr;
 
         Config g_config;
-        // Built before anything reads HeadTracking.ini and never destroyed while
+        // Built before anything reads CameraUnlock.ini and never destroyed while
         // the hotkey thread that saves through it runs.
         std::unique_ptr<cameraunlock::config::ConfigOwner<Config>> g_owner;
 
@@ -263,11 +263,11 @@ namespace kcd2_ht
             OpenLog();
             cameraunlock::diagnostics::InstallCrashHandler();
 
-            // Loads, converts an older file or creates the file, on this thread
-            // rather than under the loader lock, and after the log is open so its
-            // lines have somewhere to go.
+            // Reads CameraUnlock.ini, or imports HeadTracking.ini into it or creates
+            // it, on this thread rather than under the loader lock, and after the
+            // log is open so its lines have somewhere to go.
             g_owner = std::make_unique<cameraunlock::config::ConfigOwner<Config>>(
-                OwnerOptions(ExeDirectory() + L"\\HeadTracking.ini"));
+                OwnerOptions(ExeDirectory(), cameraunlock::config::DefaultsFile::PerUser()));
             const cameraunlock::config::ConfigLoadResult<Config> loaded = g_owner->Load();
             for (const std::string& line : loaded.log) Log::Line("%s", line.c_str());
             g_config = loaded.config;

@@ -4,6 +4,7 @@
 
 #include <cameraunlock/config/config_owner.h>
 #include <cameraunlock/config/config_table.h>
+#include <cameraunlock/config/defaults_file.h>
 #include <cameraunlock/config/legacy_import.h>
 #include <cameraunlock/data/position_settings.h>
 #include <cameraunlock/math/smoothing_utils.h>
@@ -11,7 +12,7 @@
 
 namespace kcd2_ht {
 
-// HeadTracking.ini beside KingdomCome.exe, in cameraunlock-core's canonical
+// CameraUnlock.ini beside KingdomCome.exe, in cameraunlock-core's canonical
 // format. ConfigOwner is its one reader and writer; ConfigTableFor() lists its
 // rows.
 struct Config {
@@ -58,7 +59,7 @@ struct Config {
 // owns pose shaping (AGENTS.md), and a backwards axis is a boundary-conversion
 // bug to fix in view_injection.cpp, not a knob to hand the player.
 
-// The rows of HeadTracking.ini. The mode pair, WorldSpaceYaw and TrueFreeLook
+// The rows of CameraUnlock.ini. The mode pair, WorldSpaceYaw and TrueFreeLook
 // are Writable: their hotkeys save them. EnableOnStartup is not, so End never
 // reaches the file.
 cameraunlock::config::ConfigTable<Config> ConfigTableFor();
@@ -67,12 +68,17 @@ cameraunlock::config::ConfigTable<Config> ConfigTableFor();
 // spells it.
 extern const char* const kGameDisplayName;
 
-// The frozen reader in legacy_config/ as the owner's import: it reads a
-// HeadTracking.ini an older build wrote and maps it into Config.
+// The frozen reader in legacy_config/ as the owner's import: it reads the
+// HeadTracking.ini an older build read and maps it into Config.
 cameraunlock::config::LegacyImport<Config> LegacyImportFor();
 
-// The owner of the file at @p path, a full path.
-cameraunlock::config::ConfigOwnerOptions<Config> OwnerOptions(const std::wstring& path);
+// The owner of CameraUnlock.ini in @p directory, a full path, with the
+// HeadTracking.ini every earlier build read beside it as the legacy file, which
+// it imports once while CameraUnlock.ini is absent and never writes. @p defaults
+// is where Defaults.ini is: the player's own in the mod, a scratch file in a
+// test.
+cameraunlock::config::ConfigOwnerOptions<Config> OwnerOptions(const std::wstring& directory,
+                                                              cameraunlock::config::DefaultsFile defaults);
 
 // The tracking mode the session starts in.
 cameraunlock::TrackingMode StartupMode(const Config& config);

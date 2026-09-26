@@ -13,7 +13,7 @@
 //
 // The Game Pass layout is flat. KingdomCome.exe and WHGame.dll sit directly in
 // <XboxGames>\Kingdom Come- Deliverance II\Content, with no
-// Bin\Win64MasterMasterSteamPGO, so the loader, the ASI, HeadTracking.ini and
+// Bin\Win64MasterMasterSteamPGO, so the loader, the ASI, CameraUnlock.ini and
 // HeadTracking.log all sit there instead. Nothing in the mod depends on that -
 // the log and INI follow the running exe - but it is the first thing to check
 // when a Game Pass player reports no log file.

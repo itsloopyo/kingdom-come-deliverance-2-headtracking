@@ -5,8 +5,11 @@
 // startup code that turned its output into the session's state.
 // Import: the frozen reader in src/legacy_config/ and its map into Config, the
 // owner's LegacyImport, through the mod's startup code.
-// Migration: the config owner converting the file in a scratch folder, then the
-// canonical reader and table on the result.
+// Migration: the config owner in a scratch folder holding only the file as
+// HeadTracking.ini, which it imports into a new CameraUnlock.ini, then the
+// canonical reader and table on that file. Every owner reads a scratch
+// Defaults.ini the first load creates with the built-in values, so a row whose
+// imported value is the built-in one migrates as `default`.
 //
 // Every input runs through all three: the published build's first-run file, every
 // other committed version of that file, no file, an empty file and the corpus core
@@ -31,6 +34,15 @@
 //
 // The published build never refuses a file, so no input is refused.
 //
+// After every load HeadTracking.ini keeps its bytes and its last write time, and
+// the folder holds it and CameraUnlock.ini and nothing else. Every input is also
+// migrated from a read-only HeadTracking.ini, which has to give the same file
+// and keep its read-only attribute. A second load reads CameraUnlock.ini, does
+// not import, and changes neither file.
+//
+// The distinct migrated files are written beside the executable under
+// migrated\, for lint-migrated.mjs to run core's canonical config lint over.
+//
 // What is recorded here, and checked by hash below:
 //   - The published builds: only the dev pre-release, at ed0140b. No v* tag and no
 //     predecessor repo exists.
@@ -49,11 +61,13 @@
 
 #include <bcrypt.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -61,6 +75,7 @@
 #include <cameraunlock/config/canonical_ini.h>
 #include <cameraunlock/config/config_owner.h>
 #include <cameraunlock/config/config_table.h>
+#include <cameraunlock/config/defaults_file.h>
 #include <cameraunlock/config/legacy_import.h>
 #include <cameraunlock/config/testing/ini_mutations.h>
 #include <cameraunlock/input/key_bindings.h>
@@ -123,6 +138,23 @@ std::string Sha256(const std::string& bytes) {
 
 bool SameBits(float a, float b) { return std::memcmp(&a, &b, sizeof(float)) == 0; }
 
+FILETIME WriteTime(const fs::path& path) {
+    WIN32_FILE_ATTRIBUTE_DATA data{};
+    if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &data))
+        throw std::runtime_error("cannot stat " + path.string());
+    return data.ftLastWriteTime;
+}
+
+bool SameTime(const FILETIME& a, const FILETIME& b) {
+    return a.dwLowDateTime == b.dwLowDateTime && a.dwHighDateTime == b.dwHighDateTime;
+}
+
+bool IsReadOnly(const fs::path& path) {
+    const DWORD attributes = GetFileAttributesW(path.c_str());
+    if (attributes == INVALID_FILE_ATTRIBUTES) throw std::runtime_error("cannot stat " + path.string());
+    return (attributes & FILE_ATTRIBUTE_READONLY) != 0;
+}
+
 // A fresh folder under %TEMP% for the whole run, removed at the end.
 class Scratch {
 public:
@@ -139,6 +171,12 @@ public:
         const fs::path dir = root_ / (std::string(kind) + "-" + std::to_string(next_++));
         fs::create_directories(dir);
         return dir;
+    }
+
+    // The run's one Defaults.ini, outside every game folder. The first owner
+    // creates it with the built-in values and every later one reads it.
+    cameraunlock::config::DefaultsFile Defaults() const {
+        return cameraunlock::config::DefaultsFile::At((root_ / "global" / "Defaults.ini").wstring());
     }
 
 private:
@@ -403,12 +441,6 @@ bool Contains(const std::vector<std::string>& lines, const std::string& text) {
     return false;
 }
 
-cameraunlock::config::RenderHeader Header() {
-    cameraunlock::config::RenderHeader header;
-    header.display_name = kcd2_ht::kGameDisplayName;
-    return header;
-}
-
 // The oracle is the published source and the core sources it compiled against,
 // unchanged; the import compiles core's IniReader, which is identical to the one
 // the published build compiled.
@@ -465,60 +497,100 @@ void FirstRunTests(Scratch& scratch) {
           "the published build's first run writes inputs/first-run-dev-ed0140b.ini byte for byte");
 }
 
-// Converts <bytes> (or no file) in a fresh folder with the mod's owner and checks
-// what the conversion leaves behind. Returns the settings the session runs on.
-kcd2_ht::Config Migrate(Scratch& scratch, const Input& input, const Imported& imported) {
+// The legacy file as a load must leave it: its bytes, its last write time and,
+// for a read-only copy, its read-only attribute.
+struct LegacyState {
+    std::string bytes;
+    FILETIME written{};
+    bool read_only = false;
+};
+
+LegacyState StateOf(const fs::path& file) { return {ReadBytes(file), WriteTime(file), IsReadOnly(file)}; }
+
+bool Unchanged(const fs::path& file, const LegacyState& before) {
+    return ReadBytes(file) == before.bytes && SameTime(WriteTime(file), before.written)
+        && IsReadOnly(file) == before.read_only;
+}
+
+std::vector<fs::path> Sorted(std::vector<fs::path> names) {
+    std::sort(names.begin(), names.end());
+    return names;
+}
+
+struct Migrated {
+    kcd2_ht::Config config;
+    std::string bytes;
+};
+
+// Puts <bytes> (or no file) in a fresh folder as HeadTracking.ini, read-only when
+// @p readOnly, lets the mod's owner load, and checks what the load leaves behind.
+// Returns the settings the session runs on and the CameraUnlock.ini it created.
+Migrated Migrate(Scratch& scratch, const Input& input, const Imported& imported, bool readOnly) {
     using cameraunlock::config::ConfigLoadStatus;
     using cameraunlock::config::ConfigOwner;
 
+    const std::string name = input.name + (readOnly ? " (read-only)" : "");
     const fs::path dir = scratch.Folder("migrate");
-    const fs::path file = dir / "HeadTracking.ini";
-    if (input.present) WriteBytes(file, input.bytes);
+    const fs::path legacy = dir / "HeadTracking.ini";
+    const fs::path file = dir / "CameraUnlock.ini";
+    LegacyState before;
+    if (input.present) {
+        WriteBytes(legacy, input.bytes);
+        if (readOnly) SetFileAttributesW(legacy.c_str(), FILE_ATTRIBUTE_READONLY);
+        before = StateOf(legacy);
+    }
+    const std::vector<fs::path> expectedListing = input.present
+        ? std::vector<fs::path>{"CameraUnlock.ini", "HeadTracking.ini"}
+        : std::vector<fs::path>{"CameraUnlock.ini"};
 
-    ConfigOwner<kcd2_ht::Config> owner(kcd2_ht::OwnerOptions(file.wstring()));
+    ConfigOwner<kcd2_ht::Config> owner(kcd2_ht::OwnerOptions(dir.wstring(), scratch.Defaults()));
     const auto loaded = owner.Load();
     const ConfigLoadStatus expected = input.present ? ConfigLoadStatus::Migrated : ConfigLoadStatus::Created;
     if (loaded.status != expected) {
-        Fail(input.name + ": the owner's load is " +
-             cameraunlock::config::ConfigLoadStatusName(loaded.status) + ", not " +
-             cameraunlock::config::ConfigLoadStatusName(expected) + " (" + loaded.reason + ")");
-        return loaded.config;
+        Fail(name + ": the owner's load is " + cameraunlock::config::ConfigLoadStatusName(loaded.status) +
+             ", not " + cameraunlock::config::ConfigLoadStatusName(expected) + " (" + loaded.reason + ")");
+        return {loaded.config, {}};
     }
+    if (input.present && !Unchanged(legacy, before))
+        Fail(name + ": the import changed HeadTracking.ini");
+    if (Sorted(Listing(dir)) != expectedListing)
+        Fail(name + ": the folder holds more than HeadTracking.ini and CameraUnlock.ini");
 
     const std::string migrated = ReadBytes(file);
     if (input.present) {
-        if (ReadBytes(dir / "HeadTracking.ini.pre-canonical") != input.bytes)
-            Fail(input.name + ": .pre-canonical does not hold the input");
-        if (fs::exists(dir / "HeadTracking.ini.pre-canonical.last"))
-            Fail(input.name + ": the first conversion wrote a .pre-canonical.last");
         for (const auto& dropped : imported.result.dropped) {
             if (!Contains(loaded.log, cameraunlock::config::DescribeDroppedValue(dropped)))
-                Fail(input.name + ": the log does not name the dropped " + dropped.key);
+                Fail(name + ": the log does not name the dropped " + dropped.key);
         }
     }
 
-    // The migrated bytes as the canonical lint reads them: nothing for the reader or
-    // the table to report, and a render of what they read gives them back.
+    // The migrated bytes as the canonical reader and the table read them, over the
+    // built-in values Defaults.ini holds: nothing to report, and the settings the
+    // session runs on.
     const cameraunlock::config::CanonicalIni doc = cameraunlock::config::ParseCanonicalIni(migrated);
     const auto table = kcd2_ht::ConfigTableFor();
     kcd2_ht::Config reread = table.defaults();
     if (doc.status != cameraunlock::config::CanonicalReadStatus::Readable || !doc.diagnostics.empty()
             || !cameraunlock::config::ApplyCanonical(doc, table, reread).diagnostics.empty())
-        Fail(input.name + ": the migrated file draws a diagnostic");
-    if (cameraunlock::config::RenderCanonical(table, reread, Header()) != migrated)
-        Fail(input.name + ": rendering the migrated file's settings does not give its bytes");
+        Fail(name + ": the migrated file draws a diagnostic");
     for (const std::string& field : ConfigDifferences(reread, loaded.config))
-        Fail(input.name + ": the migrated file reads back a different " + field);
+        Fail(name + ": the migrated file reads back a different " + field);
 
-    // A second launch finds a canonical file and leaves it alone.
-    ConfigOwner<kcd2_ht::Config> next(kcd2_ht::OwnerOptions(file.wstring()));
-    if (next.Load().status != ConfigLoadStatus::Canonical || ReadBytes(file) != migrated
-            || fs::exists(dir / "HeadTracking.ini.pre-canonical.last"))
-        Fail(input.name + ": migrating the migrated file did something");
-    return loaded.config;
+    // A second launch reads CameraUnlock.ini, does not import, and changes neither
+    // file.
+    const FILETIME migratedTime = WriteTime(file);
+    ConfigOwner<kcd2_ht::Config> next(kcd2_ht::OwnerOptions(dir.wstring(), scratch.Defaults()));
+    const auto again = next.Load();
+    if (again.status != ConfigLoadStatus::Canonical || !ConfigDifferences(again.config, loaded.config).empty()
+            || ReadBytes(file) != migrated || !SameTime(WriteTime(file), migratedTime)
+            || (input.present && !Unchanged(legacy, before)) || Sorted(Listing(dir)) != expectedListing)
+        Fail(name + ": a second load did not read CameraUnlock.ini as it was and leave both files alone");
+    if (input.present && !Contains(again.log, "is left as it was and is not read."))
+        Fail(name + ": a second load does not log that HeadTracking.ini is not read");
+    return {loaded.config, migrated};
 }
 
-void Comparisons(Scratch& scratch) {
+void Comparisons(Scratch& scratch, std::set<std::string>& distinct) {
     std::cout << "Comparison 1, published build against the import, and comparison 2, import against migration\n";
     const std::vector<Input> inputs = Inputs();
     int compared = 0;
@@ -559,9 +631,16 @@ void Comparisons(Scratch& scratch) {
                               || ReadBytes(importFile) != input.bytes))
             Fail(input.name + ": the import changed the folder of a read-only file");
 
-        const kcd2_ht::Config migrated = Migrate(scratch, input, imported);
-        for (const std::string& field : ConfigDifferences(imported.config, migrated))
+        const Migrated migrated = Migrate(scratch, input, imported, false);
+        for (const std::string& field : ConfigDifferences(imported.config, migrated.config))
             Fail(input.name + ": comparison 2: " + field + " differs between the import and the migration");
+        if (input.present) {
+            const Migrated fromReadOnly = Migrate(scratch, input, imported, true);
+            if (fromReadOnly.bytes != migrated.bytes
+                    || !ConfigDifferences(fromReadOnly.config, migrated.config).empty())
+                Fail(input.name + ": a read-only HeadTracking.ini migrates differently from a writable one");
+        }
+        distinct.insert(migrated.bytes);
         ++compared;
     }
     Check(compared > 1000, std::to_string(compared) + " inputs compared");
@@ -569,8 +648,10 @@ void Comparisons(Scratch& scratch) {
 }
 
 // The published build's first-run file, which is also what its players hold if
-// they never changed a setting, converts to exactly the file a fresh install
-// creates. No build shipped a config in a ZIP or a launcher seed.
+// they never changed a setting, imports into exactly the file a fresh install
+// creates: with Defaults.ini at the built-in values every row it leaves at its
+// default migrates as `default`. No build shipped a config in a ZIP or a
+// launcher seed.
 void FreshEqualsUpgradeTests(Scratch& scratch) {
     std::cout << "Fresh install against upgrade\n";
     const std::string committed = ReadBytes(kRepo / "HeadTracking.ini");
@@ -578,21 +659,37 @@ void FreshEqualsUpgradeTests(Scratch& scratch) {
     const fs::path upgraded = scratch.Folder("upgrade");
     WriteBytes(upgraded / "HeadTracking.ini", PublishedFirstRun());
     cameraunlock::config::ConfigOwner<kcd2_ht::Config> upgrade(
-        kcd2_ht::OwnerOptions((upgraded / "HeadTracking.ini").wstring()));
+        kcd2_ht::OwnerOptions(upgraded.wstring(), scratch.Defaults()));
     const auto loaded = upgrade.Load();
     Check(loaded.status == cameraunlock::config::ConfigLoadStatus::Migrated
-              && ReadBytes(upgraded / "HeadTracking.ini") == committed,
-          "the published first-run file converts to the committed HeadTracking.ini byte for byte");
+              && ReadBytes(upgraded / "CameraUnlock.ini") == committed,
+          "the published first-run file imports into a CameraUnlock.ini equal to the committed file");
+    Check(ReadBytes(upgraded / "HeadTracking.ini") == PublishedFirstRun(),
+          "and HeadTracking.ini keeps the published build's bytes");
     Check(Contains(loaded.log, "not carried: [ADS] AdsMode=paused")
               && Contains(loaded.log, "not carried: [Hotkeys] AdsModeKey=0x2D"),
           "and the log names the two ADS keys this build no longer reads");
 
     const fs::path fresh = scratch.Folder("fresh");
     cameraunlock::config::ConfigOwner<kcd2_ht::Config> create(
-        kcd2_ht::OwnerOptions((fresh / "HeadTracking.ini").wstring()));
+        kcd2_ht::OwnerOptions(fresh.wstring(), scratch.Defaults()));
     Check(create.Load().status == cameraunlock::config::ConfigLoadStatus::Created
-              && ReadBytes(fresh / "HeadTracking.ini") == committed,
-          "a fresh install creates the committed HeadTracking.ini byte for byte");
+              && ReadBytes(fresh / "CameraUnlock.ini") == committed,
+          "a fresh install creates the committed file byte for byte as CameraUnlock.ini");
+}
+
+// Each distinct migrated file, under migrated\ beside this executable, replacing
+// what an earlier run left there.
+void WriteForLint(const std::set<std::string>& distinct) {
+    wchar_t exe[MAX_PATH] = {};
+    const DWORD length = GetModuleFileNameW(nullptr, exe, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH) throw std::runtime_error("cannot read the test's own path");
+    const fs::path dir = fs::path(std::wstring(exe, length)).parent_path() / "migrated";
+    fs::remove_all(dir);
+    fs::create_directories(dir);
+    int n = 0;
+    for (const std::string& bytes : distinct) WriteBytes(dir / (std::to_string(n++) + ".ini"), bytes);
+    std::cout << "  wrote " << distinct.size() << " distinct migrated files to " << dir.string() << "\n";
 }
 
 }  // namespace
@@ -603,8 +700,10 @@ int main() {
         Scratch scratch;
         FrozenSourceTests();
         FirstRunTests(scratch);
-        Comparisons(scratch);
+        std::set<std::string> distinct;
+        Comparisons(scratch, distinct);
         FreshEqualsUpgradeTests(scratch);
+        WriteForLint(distinct);
     } catch (const std::exception& e) {
         std::cout << "  [FAIL] threw: " << e.what() << "\n";
         ++g_failures;

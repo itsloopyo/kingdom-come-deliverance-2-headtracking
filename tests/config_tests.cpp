@@ -1,20 +1,25 @@
-// The canonical HeadTracking.ini: the committed file the table renders, what the
-// owner creates and reads, what each hotkey saves and what it may not, and the
-// frozen legacy reader's own contract.
+// CameraUnlock.ini: the committed file the table renders, what the owner creates
+// and reads, what it takes from Defaults.ini, what each hotkey saves and what it
+// may not, how it imports HeadTracking.ini and leaves it alone, and the frozen
+// legacy reader's own contract.
 
 #include "config.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <windows.h>
 
 #include <cameraunlock/config/config_owner.h>
+#include <cameraunlock/config/defaults_file.h>
 #include <cameraunlock/input/key_bindings.h>
 
 #include "hotkey_bindings.h"
@@ -29,6 +34,7 @@ using kcd_tests::NearEqual;
 using cameraunlock::config::ConfigLoadStatus;
 using cameraunlock::config::ConfigOwner;
 using cameraunlock::config::ConfigSaveStatus;
+using cameraunlock::config::DefaultsFile;
 using cameraunlock::input::KeyBinding;
 using cameraunlock::input::KeyModifiers;
 
@@ -37,6 +43,7 @@ const fs::path kCommitted = fs::path(KCD2_REPO_DIR) / "HeadTracking.ini";
 std::string ReadBytes(const fs::path& path)
 {
     std::ifstream in(path, std::ios::binary);
+    if (!in) throw std::runtime_error("cannot read " + path.string());
     std::ostringstream buffer;
     buffer << in.rdbuf();
     return buffer.str();
@@ -46,18 +53,64 @@ void WriteBytes(const fs::path& path, const std::string& bytes)
 {
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     out << bytes;
+    if (!out) throw std::runtime_error("cannot write " + path.string());
 }
 
-fs::path FreshDir(const char* name)
+FILETIME WriteTime(const fs::path& path)
 {
-    const fs::path dir = fs::temp_directory_path() / "kcd-ht-config-tests" / name;
-    std::error_code ignored;
-    fs::remove_all(dir, ignored);
-    fs::create_directories(dir);
-    return dir;
+    WIN32_FILE_ATTRIBUTE_DATA data{};
+    if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &data))
+        throw std::runtime_error("cannot stat " + path.string());
+    return data.ftLastWriteTime;
 }
 
-// The lines of @p a that differ from @p b, which must have as many.
+bool SameTime(const FILETIME& a, const FILETIME& b)
+{
+    return a.dwLowDateTime == b.dwLowDateTime && a.dwHighDateTime == b.dwHighDateTime;
+}
+
+// A new, empty game folder, with a scratch Defaults.ini under the test's own
+// root rather than the player's, so no test reaches %AppData%.
+struct Folder {
+    fs::path game;
+    fs::path defaults;
+
+    explicit Folder(const char* name)
+    {
+        const fs::path root = fs::temp_directory_path() / "kcd-ht-config-tests" / name;
+        std::error_code ignored;
+        fs::remove_all(root, ignored);
+        game = root / "game";
+        fs::create_directories(game);
+        defaults = root / "global" / "Defaults.ini";
+    }
+
+    fs::path Config() const { return game / "CameraUnlock.ini"; }
+    fs::path Legacy() const { return game / "HeadTracking.ini"; }
+
+    std::unique_ptr<ConfigOwner<kcd2_ht::Config>> Owner() const
+    {
+        return std::make_unique<ConfigOwner<kcd2_ht::Config>>(
+            kcd2_ht::OwnerOptions(game.wstring(), DefaultsFile::At(defaults.wstring())));
+    }
+
+    std::vector<std::string> Listing() const
+    {
+        std::vector<std::string> names;
+        for (const auto& entry : fs::directory_iterator(game)) names.push_back(entry.path().filename().string());
+        std::sort(names.begin(), names.end());
+        return names;
+    }
+};
+
+bool Contains(const std::vector<std::string>& lines, const std::string& text)
+{
+    for (const std::string& line : lines)
+        if (line.find(text) != std::string::npos) return true;
+    return false;
+}
+
+// The lines of @p b that differ from @p a, which must have as many.
 std::vector<std::string> ChangedLines(const std::string& a, const std::string& b)
 {
     std::vector<std::string> la, lb, changed;
@@ -74,21 +127,35 @@ std::string Render()
 {
     cameraunlock::config::RenderHeader header;
     header.display_name = kcd2_ht::kGameDisplayName;
-    const auto table = kcd2_ht::ConfigTableFor();
-    return cameraunlock::config::RenderCanonical(table, table.defaults(), header);
+    return cameraunlock::config::RenderCanonicalFresh(kcd2_ht::ConfigTableFor(), header);
+}
+
+// The committed file with each `from` line replaced by `to`.
+std::string CommittedWith(const std::vector<std::pair<std::string, std::string>>& lines)
+{
+    std::string text = ReadBytes(kCommitted);
+    for (const auto& [from, to] : lines) {
+        const std::size_t at = text.find(from + "\r\n");
+        if (at == std::string::npos) throw std::logic_error(from + " is not a line of the committed file");
+        text.replace(at, from.size(), to);
+    }
+    return text;
 }
 
 void CommittedFileTests(int& failures)
 {
     Check(failures, ReadBytes(kCommitted) == Render(),
-          "HeadTracking.ini is the table's render of its defaults (pixi run render-config rewrites it)");
+          "HeadTracking.ini is the table's fresh render (pixi run render-config rewrites it)");
 
-    const fs::path dir = FreshDir("created");
-    ConfigOwner<kcd2_ht::Config> owner(kcd2_ht::OwnerOptions((dir / "HeadTracking.ini").wstring()));
-    const auto loaded = owner.Load();
-    Check(failures, loaded.status == ConfigLoadStatus::Created, "a missing file is created");
-    Check(failures, ReadBytes(dir / "HeadTracking.ini") == ReadBytes(kCommitted),
+    const Folder folder("created");
+    const auto owner = folder.Owner();
+    const auto loaded = owner->Load();
+    Check(failures, loaded.status == ConfigLoadStatus::Created, "with no file of either name, CameraUnlock.ini is created");
+    Check(failures, ReadBytes(folder.Config()) == ReadBytes(kCommitted),
           "and holds the committed file byte for byte");
+    Check(failures, folder.Listing() == std::vector<std::string>{"CameraUnlock.ini"},
+          "and nothing else is written beside it");
+    Check(failures, fs::exists(folder.defaults), "a missing Defaults.ini is created with the built-in values");
 
     const kcd2_ht::Config& c = loaded.config;
     Check(failures, c.udp_port == 4242 && c.enable_on_startup && c.world_space_yaw
@@ -105,32 +172,26 @@ void CommittedFileTests(int& failures)
                  && c.true_free_look_key == "Insert, Ctrl+Shift+U",
           "the hotkeys default to the fleet's nav keys and chords");
 
-    const auto again = owner.Reload();
+    const auto again = owner->Reload();
     Check(failures, again.status == cameraunlock::config::ConfigReloadStatus::Unchanged,
           "reloading the created file finds nothing to apply");
 }
 
 void CanonicalReadTests(int& failures)
 {
-    const fs::path dir = FreshDir("canonical");
-    std::string text = ReadBytes(kCommitted);
-    const auto set = [&text](const std::string& from, const std::string& to) {
-        const std::size_t at = text.find(from);
-        if (at == std::string::npos) throw std::logic_error(from + " is not in the committed file");
-        text.replace(at, from.size(), to);
-    };
-    set("UdpPort=4242", "UdpPort=5252");
-    set("EnableOnStartup=true", "EnableOnStartup=false");
-    set("WorldSpaceYaw=true", "WorldSpaceYaw=false");
-    set("RotationEnabled=true", "RotationEnabled=false");
-    set("TrueFreeLook=false", "TrueFreeLook=true");
-    set("MaxExtrapolationFraction=0.5", "MaxExtrapolationFraction=0.0");
-    set("PositionLimitYDown=0.2", "PositionLimitYDown=0.05");
-    set("ToggleKey=End, Ctrl+Shift+Y", "ToggleKey=F9");
-    WriteBytes(dir / "HeadTracking.ini", text);
+    const Folder folder("canonical");
+    WriteBytes(folder.Config(), CommittedWith({
+        {"UdpPort=default", "UdpPort=5252"},
+        {"EnableOnStartup=default", "EnableOnStartup=false"},
+        {"WorldSpaceYaw=default", "WorldSpaceYaw=false"},
+        {"RotationEnabled=default", "RotationEnabled=false"},
+        {"TrueFreeLook=default", "TrueFreeLook=true"},
+        {"MaxExtrapolationFraction=0.5", "MaxExtrapolationFraction=0.0"},
+        {"PositionLimitYDown=default", "PositionLimitYDown=0.05"},
+        {"ToggleKey=default", "ToggleKey=F9"},
+    }));
 
-    ConfigOwner<kcd2_ht::Config> owner(kcd2_ht::OwnerOptions((dir / "HeadTracking.ini").wstring()));
-    const auto loaded = owner.Load();
+    const auto loaded = folder.Owner()->Load();
     const kcd2_ht::Config& c = loaded.config;
     Check(failures, loaded.status == ConfigLoadStatus::Canonical && loaded.diagnostics.empty(),
           "a stamped file is read as canonical with nothing to report");
@@ -143,48 +204,113 @@ void CanonicalReadTests(int& failures)
           "RotationEnabled=false with PositionEnabled=true starts position only");
 }
 
+// A row holding `default` takes Defaults.ini's value; a value in the game's file
+// wins over it.
+void DefaultsIniTests(int& failures)
+{
+    const Folder folder("defaults-ini");
+    fs::create_directories(folder.defaults.parent_path());
+    WriteBytes(folder.defaults, "[General]\r\nWorldSpaceYaw=false\r\n[Hotkeys]\r\nToggleKey=F8\r\n"
+                                "YawModeKey=F7\r\n[Network]\r\nUdpPort=5000\r\n");
+    WriteBytes(folder.Config(), CommittedWith({{"YawModeKey=default", "YawModeKey=F6"}}));
+    const std::string defaultsBefore = ReadBytes(folder.defaults);
+
+    const auto owner = folder.Owner();
+    const auto loaded = owner->Load();
+    const kcd2_ht::Config& c = loaded.config;
+    Check(failures, loaded.status == ConfigLoadStatus::Canonical && !c.world_space_yaw
+                 && c.toggle_key == "F8" && c.udp_port == 5000,
+          "rows holding default take Defaults.ini's values");
+    Check(failures, c.yaw_mode_key == "F6", "a value in CameraUnlock.ini wins over Defaults.ini");
+    Check(failures, c.cycle_tracking_mode_key == "PageUp, Ctrl+Shift+G",
+          "a row Defaults.ini leaves out takes the built-in value");
+
+    const std::string before = ReadBytes(folder.Config());
+    const auto saved = owner->Save([](kcd2_ht::Config& config) { config.world_space_yaw = true; });
+    Check(failures, saved.status == ConfigSaveStatus::Saved
+                 && ChangedLines(before, ReadBytes(folder.Config())) == std::vector<std::string>{"WorldSpaceYaw=true\r"},
+          "the yaw toggle writes its value over default and changes no other line");
+    Check(failures, Contains(saved.log, "WorldSpaceYaw=true is now set for this game, and no longer follows Defaults.ini."),
+          "and the save's log says the row no longer follows Defaults.ini");
+    Check(failures, ReadBytes(folder.defaults) == defaultsBefore, "the mod never writes Defaults.ini");
+}
+
 void SaveTests(int& failures)
 {
-    const fs::path dir = FreshDir("save");
-    const fs::path file = dir / "HeadTracking.ini";
-    ConfigOwner<kcd2_ht::Config> owner(kcd2_ht::OwnerOptions(file.wstring()));
-    owner.Load();
+    const Folder folder("save");
+    const auto owner = folder.Owner();
+    owner->Load();
 
-    std::string before = ReadBytes(file);
-    Check(failures, owner.Save([](kcd2_ht::Config& c) { c.world_space_yaw = false; }).status
+    std::string before = ReadBytes(folder.Config());
+    Check(failures, owner->Save([](kcd2_ht::Config& c) { c.world_space_yaw = false; }).status
                      == ConfigSaveStatus::Saved,
           "the yaw mode saves");
-    Check(failures, ChangedLines(before, ReadBytes(file)) == std::vector<std::string>{"WorldSpaceYaw=false\r"},
+    Check(failures, ChangedLines(before, ReadBytes(folder.Config())) == std::vector<std::string>{"WorldSpaceYaw=false\r"},
           "and changes the WorldSpaceYaw line and no other byte");
 
-    before = ReadBytes(file);
+    before = ReadBytes(folder.Config());
     const cameraunlock::TrackingModeChannels rotationOnly =
         cameraunlock::EncodeTrackingMode(cameraunlock::TrackingMode::RotationOnly);
-    owner.Save([rotationOnly](kcd2_ht::Config& c) {
+    owner->Save([rotationOnly](kcd2_ht::Config& c) {
         c.rotation_enabled = rotationOnly.rotation_enabled;
         c.position_enabled = rotationOnly.position_enabled;
     });
-    Check(failures, ChangedLines(before, ReadBytes(file)) == std::vector<std::string>{"PositionEnabled=false\r"},
-          "a mode change to rotation only writes the pair, of which only PositionEnabled differs");
+    Check(failures, ChangedLines(before, ReadBytes(folder.Config()))
+                     == std::vector<std::string>{"RotationEnabled=true\r", "PositionEnabled=false\r"},
+          "a mode change writes both rows of the pair over default");
 
-    before = ReadBytes(file);
-    owner.Save([](kcd2_ht::Config& c) { c.true_free_look = true; });
-    Check(failures, ChangedLines(before, ReadBytes(file)) == std::vector<std::string>{"TrueFreeLook=true\r"},
+    before = ReadBytes(folder.Config());
+    owner->Save([](kcd2_ht::Config& c) { c.true_free_look = true; });
+    Check(failures, ChangedLines(before, ReadBytes(folder.Config())) == std::vector<std::string>{"TrueFreeLook=true\r"},
           "true free look saves its own line and no other byte");
 
     bool refused = false;
     try {
-        owner.Save([](kcd2_ht::Config& c) { c.enable_on_startup = false; });
+        owner->Save([](kcd2_ht::Config& c) { c.enable_on_startup = false; });
     } catch (const std::logic_error&) {
         refused = true;
     }
     Check(failures, refused, "EnableOnStartup is not Writable, so nothing End does can reach the file");
 
-    ConfigOwner<kcd2_ht::Config> next(kcd2_ht::OwnerOptions(file.wstring()));
-    const kcd2_ht::Config restarted = next.Load().config;
+    const kcd2_ht::Config restarted = folder.Owner()->Load().config;
     Check(failures, !restarted.world_space_yaw && restarted.rotation_enabled && !restarted.position_enabled
                  && restarted.true_free_look && restarted.enable_on_startup,
           "every saved toggle comes back at the next start");
+    Check(failures, folder.Listing() == std::vector<std::string>{"CameraUnlock.ini"},
+          "no save writes anything but CameraUnlock.ini");
+}
+
+// HeadTracking.ini is imported once, while CameraUnlock.ini is absent, and is
+// never written.
+void LegacyFileTests(int& failures)
+{
+    const Folder folder("legacy-file");
+    const std::string legacy = "[HeadTracking]\r\nWorldSpaceYaw=false\r\n[Position]\r\nLimitX=0.25\r\n";
+    WriteBytes(folder.Legacy(), legacy);
+    const FILETIME legacyTime = WriteTime(folder.Legacy());
+
+    const auto first = folder.Owner()->Load();
+    Check(failures, first.status == ConfigLoadStatus::Migrated && !first.config.world_space_yaw
+                 && NearEqual(first.config.limit_x, 0.25f),
+          "with no CameraUnlock.ini, HeadTracking.ini is imported into a new one");
+    Check(failures, folder.Listing() == std::vector<std::string>{"CameraUnlock.ini", "HeadTracking.ini"},
+          "and the folder then holds the two files and nothing else");
+    Check(failures, ReadBytes(folder.Legacy()) == legacy && SameTime(WriteTime(folder.Legacy()), legacyTime),
+          "HeadTracking.ini keeps its bytes and its write time");
+
+    WriteBytes(folder.Legacy(), "[HeadTracking]\r\nWorldSpaceYaw=true\r\n");
+    const std::string migrated = ReadBytes(folder.Config());
+    const auto second = folder.Owner()->Load();
+    Check(failures, second.status == ConfigLoadStatus::Canonical && !second.config.world_space_yaw
+                 && ReadBytes(folder.Config()) == migrated,
+          "while CameraUnlock.ini exists, HeadTracking.ini is not read again");
+    Check(failures, Contains(second.log, "is left as it was and is not read."),
+          "and the log says so");
+
+    fs::remove(folder.Config());
+    const auto third = folder.Owner()->Load();
+    Check(failures, third.status == ConfigLoadStatus::Migrated && third.config.world_space_yaw,
+          "deleting only CameraUnlock.ini imports HeadTracking.ini again");
 }
 
 void HotkeyBindingTests(int& failures)
@@ -205,10 +331,10 @@ void HotkeyBindingTests(int& failures)
 void LegacyReaderTests(int& failures)
 {
     const auto read = [](const char* name, const char* body) {
-        const fs::path dir = FreshDir(name);
-        WriteBytes(dir / "HeadTracking.ini", body);
+        const Folder folder(name);
+        WriteBytes(folder.Legacy(), body);
         kcd2_ht::legacy::Config config;
-        kcd2_ht::legacy::LoadConfig(dir.string(), config);
+        kcd2_ht::legacy::LoadConfig(folder.game.string(), config);
         return config;
     };
 
@@ -236,7 +362,9 @@ int RunConfigTests()
 
     CommittedFileTests(failures);
     CanonicalReadTests(failures);
+    DefaultsIniTests(failures);
     SaveTests(failures);
+    LegacyFileTests(failures);
     HotkeyBindingTests(failures);
     LegacyReaderTests(failures);
 

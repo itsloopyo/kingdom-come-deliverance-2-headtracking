@@ -79,7 +79,7 @@ void WorkingDirectoryTests(int& failures)
     const std::wstring root = kcd2_ht::WorkingDirectory();
     SetCurrentDirectoryW(previous);
     Check(failures, root == L"C:",
-          "a drive root drops its separator too, so the INI path is C:\\HeadTracking.ini");
+          "a drive root drops its separator too, so the settings path is C:\\CameraUnlock.ini");
 }
 
 }  // namespace

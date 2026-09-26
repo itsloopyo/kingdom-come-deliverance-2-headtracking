@@ -1,6 +1,7 @@
 #include "config.h"
 
 #include <string>
+#include <utility>
 #include <vector>
 #include <windows.h>
 
@@ -36,6 +37,8 @@ std::string LegacyHotkey(int code, int chordLetter) {
         {KeyBinding{KeyModifiers::kNone, code}, KeyBinding{kChord, chordLetter}});
 }
 
+// input names the legacy file, HeadTracking.ini, which the frozen reader finds
+// by its folder, as the published build did.
 ImportResult RunLegacyImport(const config::LegacyInput& input, Config& out) {
     legacy::Config read;
     legacy::LoadConfig(DirectoryOf(input.ansi_path), read);
@@ -107,12 +110,14 @@ config::LegacyImport<Config> LegacyImportFor() {
     return import;
 }
 
-config::ConfigOwnerOptions<Config> OwnerOptions(const std::wstring& path) {
+config::ConfigOwnerOptions<Config> OwnerOptions(const std::wstring& directory, config::DefaultsFile defaults) {
     config::ConfigOwnerOptions<Config> options;
-    options.path = path;
+    options.path = directory + L"\\CameraUnlock.ini";
     options.table = ConfigTableFor();
     options.import = LegacyImportFor();
+    options.legacy_path = directory + L"\\HeadTracking.ini";
     options.header.display_name = kGameDisplayName;
+    options.defaults = std::move(defaults);
     // The mod draws no text of its own, so the player's message goes to the log.
     options.status_sink = [](const std::string& message) { Log::Line("%s", message.c_str()); };
     return options;
