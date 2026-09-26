@@ -66,9 +66,10 @@ before you copy:
 | Steam, GOG | `<game>\Bin\Win64MasterMasterSteamPGO\` |
 | Xbox Game Pass | `<XboxGames>\Kingdom Come- Deliverance II\Content\` |
 
-The installer ZIP mirrors the Steam layout, so its files sit under
-`Bin\Win64MasterMasterSteamPGO\` inside the archive. For an Xbox Game Pass install, take
-them out of that folder and drop them straight into `Content`.
+The installer ZIP keeps the two files in the folders named above. The Nexus ZIP
+mirrors the Steam layout, so its `.asi` sits under
+`Bin\Win64MasterMasterSteamPGO\` inside the archive. For an Xbox Game Pass
+install, take it out of that folder and drop it straight into `Content`.
 
 `dinput8.dll` is Ultimate ASI Loader. `WHGame.dll` imports DirectInput 8 directly and the game folder is searched before System32, so the loader picks itself up with no launch options. If you already run another ASI loader there, keep yours and copy only the `.asi`.
 
@@ -325,11 +326,11 @@ Run `uninstall.cmd`. This removes the mod DLLs and leaves `CameraUnlock.ini` and
 
 ## Building from Source
 
-Needs CMake and Visual Studio. The build has no dependency on a game install; it produces the installer ZIP on a clean checkout of a machine that does not own the game.
+Needs [pixi](https://pixi.sh), CMake and Visual Studio. pixi supplies Node.js, which the tests run. The build has no dependency on a game install; it produces the installer ZIP on a clean checkout of a machine that does not own the game.
 
 ```powershell
 git clone --recursive https://github.com/itsloopyo/kingdom-come-deliverance-2-headtracking
-cd kingdom-come-deliverance-2
+cd kingdom-come-deliverance-2-headtracking
 pixi run package
 ```
 
@@ -337,9 +338,9 @@ Other tasks: `pixi run build | test | install | update-deps | check-fingerprint 
 
 ## Community & Support
 
-- [Discord](https://discord.com/invite/dxyZdyFNT9) - setup help, bug reports, and new-release announcements
-- [Lopari](https://lopari.app) - free Windows launcher with one-click install and launch of head-tracking mods
-- [Headcam](https://headcam.app) - free app that turns your phone into a head tracker
+- Discord: [Loop's Head Tracking Hangout](https://discord.com/invite/dxyZdyFNT9) - setup help, bug reports, and new-release announcements
+- [Lopari](https://lopari.app) - free Windows launcher with one-click install and launch for the released head-tracking mods
+- [Headcam](https://headcam.app) - free app that turns your iPhone or Android phone into the head tracker
 
 ## License
 
