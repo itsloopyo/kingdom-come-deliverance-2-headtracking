@@ -47,15 +47,10 @@ jobs:
       # build logic lives in the pixi task chain (setup -> build -> package);
       # the workflow owns none, so local and CI can't drift. package-release.ps1
       # throws on a missing .asi, so this step is also the build-output check.
+      # package depends on test, so the whole ctest suite runs here too.
       - name: Build and package
         shell: pwsh
         run: pixi run package
-
-      # Same command a developer runs. The build is already done by `package`,
-      # so this only runs ctest over the tests target.
-      - name: Run unit tests
-        shell: pwsh
-        run: pixi run test
 
       - name: Verify installer was produced
         shell: pwsh
