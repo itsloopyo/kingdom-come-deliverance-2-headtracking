@@ -101,8 +101,8 @@ jobs:
       - name: Setup Visual Studio environment
         uses: microsoft/setup-msbuild@30375c66a4eea26614e0d39710365f22f8b0af57 # v3
 
-      # No pixi-managed dependencies here, so the install path's trailing
-      # `pixi list` would exit 1 on the empty environment. See build.yml.
+      # run-install: false - the first `pixi run` provisions the environment
+      # (Node only) on demand. See build.yml.
       - name: Setup pixi
         uses: prefix-dev/setup-pixi@5185adfbffb4bd703da3010310260805d89ebb11 # v0.9.6
         with:
