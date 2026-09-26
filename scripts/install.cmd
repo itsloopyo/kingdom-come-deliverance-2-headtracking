@@ -1,18 +1,23 @@
 @echo off
 :: ============================================
-:: CameraUnlock Ultimate ASI Loader Install Template
+:: Kingdom Come: Deliverance II Head Tracking - Install
 :: ============================================
-:: Source of truth: cameraunlock-core/scripts/templates/install-asi.cmd.
-:: Copy to <mod>/scripts/install.cmd, edit CONFIG BLOCK, leave the rest
-:: alone. Contract: see ~/.claude/CLAUDE.md "install.cmd / uninstall.cmd".
+:: Thin wrapper - install body lives in cameraunlock-core/scripts/install-body-asi.cmd,
+:: staged into the release ZIP's shared/ by Copy-SharedBundle. To change
+:: install behaviour edit the body, not this wrapper.
 ::
-:: Ultimate ASI Loader: a single-DLL loader renamed to winmm.dll (or
-:: dinput8.dll, xinput1_3.dll, etc. depending on the game). Mod files
-:: are .asi plugins dropped into the same directory as the game exe.
-:: EXE_DIR is derived from GAME_PATH + GAME_EXE_RELPATH returned by the
-:: shim, so games with ph/work/bin/x64-style nested exes work.
+:: Source of truth for everything below the CONFIG BLOCK:
+:: cameraunlock-core/scripts/templates/install-wrapper-asi.cmd. Copy this
+:: file to <mod>/scripts/install.cmd, fill in the CONFIG BLOCK, change nothing
+:: else. scripts/conformance.ps1 checks that nothing else changed.
+:: Keep every CONFIG BLOCK line, blank where it does not apply. A name the
+:: block leaves out is not unset: it keeps whatever another mod's wrapper set
+:: in the same console, and the body acts on that value.
 ::
-:: Launcher CLI: install.cmd [GAME_PATH] [/y]
+:: Ultimate ASI Loader: one DLL renamed to the proxy the game already
+:: imports, with the mod shipped as an .asi beside the game exe. Check the
+:: exe's import table before choosing ASI_LOADER_NAME - a proxy the game does
+:: not import is never loaded and the mod silently does nothing.
 :: ============================================
 
 :: --- CONFIG BLOCK ---
@@ -23,270 +28,42 @@ set "MOD_INTERNAL_NAME=KingdomComeDeliverance2HeadTracking"
 set "MOD_VERSION=0.0.0"
 set "STATE_FILE=.headtracking-state.json"
 set "FRAMEWORK_TYPE=ASILoader"
+:: Filename the ASI loader DLL is renamed to: the import the game exe already
+:: has. winmm.dll, dinput8.dll, dxgi.dll and xinput1_3.dll are the common ones.
 set "ASI_LOADER_NAME=dinput8.dll"
-set "MOD_CONTROLS=End = toggle tracking, Page Up = cycle tracking mode, Page Down = yaw mode, Insert = true free look (chords: Ctrl+Shift+Y/G/H/U)"
-:: ASI_LOADER_NAME is the filename the ASI DLL is renamed to. DL2 and most
-:: modern games use winmm.dll; older ones use dinput8.dll or xinput1_3.dll.
-:: vendor/ultimate-asi-loader/dinput8.dll is the bundled source; we copy it
-:: to ASI_LOADER_NAME in EXE_DIR. Bump it via `pixi run update-deps`.
+:: Subdirectory below the exe directory to deploy into, for engines that load
+:: their proxy DLL from somewhere other than beside the exe. Source engine wants
+:: bin\; a copy next to the exe is never loaded. Leave empty for everything
+:: else, and set the same value in uninstall.cmd.
+set "ASI_SUBDIR="
+:: Files copied only when they are not already there, so an upgrade keeps
+:: whatever the user tuned. Listing an .ini in MOD_DLLS instead puts it through
+:: the unconditional copy and resets every key on every update.
+set "MOD_SEED_FILES="
+:: Version of the vendored Ultimate ASI Loader, recorded in the state file so
+:: the launcher can tell which loader build it is looking at. Leave empty to
+:: omit the field. Bump alongside vendor/ via `pixi run update-deps`.
+set "ASI_LOADER_VERSION="
+:: Post-install help text. `&echo ` starts each further line.
+set "MOD_CONTROLS=Controls:&echo   End / Ctrl+Shift+Y       - Toggle head tracking on/off&echo   Page Up / Ctrl+Shift+G   - Cycle tracking mode (6DOF / rotation only / lean only)&echo   Page Down / Ctrl+Shift+H - Toggle yaw mode (world-locked / camera-local)&echo   Insert / Ctrl+Shift+U    - Toggle true free look"
 :: --- END CONFIG BLOCK ---
 
-:: :detect_yes_flag and the arg parser both break if the shell left delayed
-:: expansion on - cmd /V:ON, or DelayedExpansion=1 under
-:: HKCU\Software\Microsoft\Command Processor. Under either, a "!" in the game
-:: path is eaten out of the expanded line before the parser ever compares it, and
-:: a real directory is rejected as a malformed argument. Moving the enable to
-:: after :args_done is not enough on its own; the default has to be pinned OFF.
+:: Pin delayed expansion off before `%*` is expanded on the `call` below.
+:: Under `cmd /V:ON`, or with DelayedExpansion=1 in
+:: HKCU\Software\Microsoft\Command Processor, cmd.exe eats a `!` out of the
+:: expanded line, and a real game path like C:\Games\Oh! My Game reaches the
+:: body already mangled. The body pins expansion off at its own outer scope
+:: too, but that is one `call` too late to save the argument it was handed.
 setlocal disabledelayedexpansion
 
-call :detect_yes_flag %*
-call :main %*
-set "_EC=%errorlevel%"
-if not defined _NO_PAUSE ( echo. & pause )
-exit /b %_EC%
-
-:: ============================================
-:: Pre-scan args at outer scope and record the pause decision in _NO_PAUSE,
-:: which :main never writes. :main's own parser re-derives YES_FLAG as it goes
-:: and only reaches the /y token after the path, so a pause keyed off that
-:: variable sat there forever whenever parsing failed on an earlier argument -
-:: which is `install.cmd "<path>" /y`, lopari's exact call shape.
-::
-:: `if [%1]==[]` and not `if "%~1"==""`: %~1 strips the quotes off an empty
-:: argument, which makes `install.cmd "" /y` indistinguishable from no
-:: arguments at all and swallows the /y behind it. The bracket form keeps the
-:: launcher's quotes, so a path with whitespace stays one token. The
-:: comparisons below still use the quoted-string form - bracket form
-:: `if [%~1]==[/y]` does NOT quote, so a path arg containing whitespace
-:: ("C:\...\Gone Home") splits across the brackets and crashes cmd with
-:: "[Home]==[/y] was unexpected at this time".
-:: ============================================
-:detect_yes_flag
-if [%1]==[] exit /b 0
-if /i "%~1"=="/y"    set "_NO_PAUSE=1"
-if /i "%~1"=="-y"    set "_NO_PAUSE=1"
-if /i "%~1"=="--yes" set "_NO_PAUSE=1"
-shift
-goto :detect_yes_flag
-
-:main
-
-:: Capture script dir BEFORE the arg parser runs. Inside `call :main`,
-:: `shift` rotates %0 too, so %~dp0 read after shifts resolves to the
-:: dirname of the first arg (e.g. C:\ for /y) instead of the script.
-set "SCRIPT_DIR=%~dp0"
-
-:: -------- Arg parser (canonical, do not modify) --------
-:: Parsed with delayed expansion OFF; `setlocal enabledelayedexpansion`
-:: deliberately comes after :args_done. With it on, cmd strips `!` out of the
-:: expanded text of `set "_ARG=%~1"` - and out of `%~1` itself - so a real
-:: game path like C:\Games\Oh! My Game silently loses the `!`, `if exist`
-:: fails, and a valid directory is rejected as a malformed argument.
-set "YES_FLAG="
-set "_GIVEN_PATH="
-:parse_args
-if "%~1"=="" goto :args_done
-set "_ARG=%~1"
-if /i "%_ARG%"=="/y"    ( set "YES_FLAG=1" & shift & goto :parse_args )
-if /i "%_ARG%"=="-y"    ( set "YES_FLAG=1" & shift & goto :parse_args )
-if /i "%_ARG%"=="--yes" ( set "YES_FLAG=1" & shift & goto :parse_args )
-if "%_ARG:~0,2%"=="--" ( echo ERROR: unknown flag "%_ARG%" & exit /b 2 )
-if "%_ARG:~0,1%"=="/"  ( echo ERROR: unknown flag "%_ARG%" & exit /b 2 )
-if "%_ARG:~0,1%"=="-"  ( echo ERROR: unknown flag "%_ARG%" & exit /b 2 )
-if not defined _GIVEN_PATH (
-    if exist "%_ARG%\" ( set "_GIVEN_PATH=%_ARG%" & shift & goto :parse_args )
-)
-echo ERROR: unrecognised argument "%_ARG%"
-exit /b 2
-:args_done
-set "_ARG="
-
-:: -------- Validate CONFIG BLOCK --------
-:: Every name below is interpolated straight into a path that gets written,
-:: deleted or recursively removed. A blank one does not fail - it silently
-:: retargets the operation at the parent directory, which is the game folder.
-for %%v in (GAME_ID MOD_DISPLAY_NAME MOD_INTERNAL_NAME STATE_FILE FRAMEWORK_TYPE MOD_DLLS ASI_LOADER_NAME) do (
-    if not defined %%v (
-        echo ERROR: %%v is not set in this script's CONFIG BLOCK.
-        exit /b 1
-    )
-)
-
-echo.
-echo === %MOD_DISPLAY_NAME% - Install ===
-echo.
-
-:: -------- Resolve game path via shared shim --------
-set "_SHIM=%SCRIPT_DIR%shared\find-game.ps1"
-if not exist "%_SHIM%" set "_SHIM=%SCRIPT_DIR%..\cameraunlock-core\scripts\find-game.ps1"
-if not exist "%_SHIM%" (
-    echo ERROR: find-game.ps1 not found in shared\ or ..\cameraunlock-core\scripts\.
+set "WRAPPER_DIR=%~dp0"
+set "_BODY=%WRAPPER_DIR%shared\install-body-asi.cmd"
+if not exist "%_BODY%" set "_BODY=%WRAPPER_DIR%..\cameraunlock-core\scripts\install-body-asi.cmd"
+if not exist "%_BODY%" (
+    echo ERROR: install-body-asi.cmd not found in shared\ or ..\cameraunlock-core\scripts\.
     echo If this is a release ZIP, re-download it from GitHub ^(corrupt installer^).
-    echo If this is the dev tree, make sure the cameraunlock-core submodule is checked out.
+    echo If this is the dev tree, run: git submodule update --init --recursive
     exit /b 1
 )
-set "_SHIM_OUT=%TEMP%\cul-find-%RANDOM%-%RANDOM%.cmd"
-:: -GivenPath is spelled out in both branches rather than built into one
-:: variable and expanded unquoted: the quotes are what keep a `&`, `^` or `)`
-:: in the user's path from being parsed as syntax.
-if defined _GIVEN_PATH (
-    powershell -NoProfile -ExecutionPolicy Bypass -File "%_SHIM%" -GameId %GAME_ID% -OutFile "%_SHIM_OUT%" -GivenPath "%_GIVEN_PATH%"
-) else (
-    powershell -NoProfile -ExecutionPolicy Bypass -File "%_SHIM%" -GameId %GAME_ID% -OutFile "%_SHIM_OUT%"
-)
-set "_PS_EC=%errorlevel%"
-if not "%_PS_EC%"=="0" (
-    echo.
-    echo ERROR: Could not resolve game install path ^(shim exit code %_PS_EC%^).
-    echo Pass a path explicitly: install.cmd "C:\path\to\game"
-    echo.
-    del "%_SHIM_OUT%" 2>nul
-    exit /b 1
-)
-call "%_SHIM_OUT%"
-del "%_SHIM_OUT%" 2>nul
-
-echo Game found: %GAME_PATH%
-
-:: Derive EXE_DIR (where .asi plugins land) from GAME_PATH + GAME_EXE_RELPATH,
-:: still with expansion off: a FOR variable is substituted before the `!` scan,
-:: so `set "EXE_DIR=%%~dpi"` would drop a `!` from the path if this ran below.
-for %%i in ("%GAME_PATH%\%GAME_EXE_RELPATH%") do set "EXE_DIR=%%~dpi"
-if "%EXE_DIR:~-1%"=="\" set "EXE_DIR=%EXE_DIR:~0,-1%"
-
-:: Delayed expansion is enabled HERE and not one line earlier. Everything the
-:: shim resolved is already in the environment, and `!VAR!` hands the value back
-:: byte-for-byte: it is substituted after cmd.exe has finished looking for `!`,
-:: so a path like C:\Games\Oh! My Game survives. `%VAR%` is substituted before
-:: that scan and would lose the `!`. The arg parser, the shim call and the
-:: EXE_DIR derivation above all run with expansion off for the same reason.
-setlocal enabledelayedexpansion
-echo Exe dir : !EXE_DIR!
-echo.
-
-:: -------- Game-running check --------
-tasklist /fi "imagename eq %GAME_EXE%" 2>nul | findstr /i /c:"%GAME_EXE%" >nul 2>&1
-if not errorlevel 1 (
-    echo ERROR: %GAME_DISPLAY_NAME% is currently running.
-    echo Please close the game before installing.
-    echo.
-    exit /b 1
-)
-
-:: -------- Prior state --------
-set "WE_INSTALLED=false"
-if exist "!GAME_PATH!\%STATE_FILE%" (
-    findstr /c:"installed_by_us" "!GAME_PATH!\%STATE_FILE%" 2>nul | findstr /c:"true" >nul 2>&1
-    if not errorlevel 1 set "WE_INSTALLED=true"
-)
-
-:: -------- Ensure ASI Loader --------
-if not exist "!EXE_DIR!\%ASI_LOADER_NAME%" (
-    echo ASI Loader not found. Installing...
-    echo.
-    call :install_asi_loader
-    if errorlevel 1 exit /b 1
-    set "WE_INSTALLED=true"
-) else (
-    echo Existing ASI Loader detected, skipping loader install, deploying plugin only.
-)
-echo.
-
-:: -------- Deploy mod files --------
-echo Deploying mod files...
-
-set "FILES_DIR=%SCRIPT_DIR%plugins"
-
-set "DEPLOY_FAILED=0"
-for %%f in (%MOD_DLLS%) do (
-    if exist "%FILES_DIR%\%%f" (
-        copy /y "%FILES_DIR%\%%f" "!EXE_DIR!\" >nul
-        if errorlevel 1 (
-            echo   ERROR: Failed to copy %%f - is the game folder writable?
-            set "DEPLOY_FAILED=1"
-        ) else (
-            echo   Deployed %%f
-        )
-    ) else (
-        echo   ERROR: %%f not found in plugins folder
-        set "DEPLOY_FAILED=1"
-    )
-)
-
-if "!DEPLOY_FAILED!"=="1" (
-    echo.
-    echo ========================================
-    echo   Deployment Failed!
-    echo ========================================
-    echo.
-    exit /b 1
-)
-
-:: -------- Write state file --------
-call :write_state_file
-
-echo.
-echo ========================================
-echo   Deployment Complete!
-echo ========================================
-echo.
-echo %MOD_DISPLAY_NAME% has been deployed to:
-echo   !EXE_DIR!
-echo.
-echo Start the game to use the mod!
-:: Percent-expansion splits MOD_CONTROLS on its embedded &echo separators;
-:: delayed expansion prints them literally. Kept outside a ( ) block so a
-:: literal ) in the controls text cannot close the block.
-if not defined MOD_CONTROLS goto :controls_done
-echo.
-echo %MOD_CONTROLS%
-:controls_done
-echo.
-exit /b 0
-
-:: ============================================
-:: Install Ultimate ASI Loader from the bundled vendored copy.
-:: Vendor tree is the single source of truth at install time. To bump the
-:: bundled version, run `pixi run update-deps` in the mod repo and commit.
-:: See ~/.claude/CLAUDE.md "Vendoring Third-Party Dependencies".
-:: ============================================
-:install_asi_loader
-set "VENDOR_DIR=%SCRIPT_DIR%vendor\ultimate-asi-loader"
-set "VENDOR_DLL=%VENDOR_DIR%\dinput8.dll"
-
-if not exist "%VENDOR_DLL%" (
-    echo   ERROR: Bundled Ultimate ASI Loader not found at:
-    echo     !VENDOR_DLL!
-    echo   The installer ZIP is corrupt. Re-download the release.
-    exit /b 1
-)
-
-copy /y "%VENDOR_DLL%" "!EXE_DIR!\%ASI_LOADER_NAME%" >nul
-if errorlevel 1 (
-    echo   ERROR: Failed to copy loader to !EXE_DIR!.
-    echo   Check the game directory is writable.
-    exit /b 1
-)
-
-echo   Ultimate ASI Loader installed successfully!
-exit /b 0
-
-:: ============================================
-:: Write the canonical state file.
-:: ============================================
-:write_state_file
-> "!GAME_PATH!\%STATE_FILE%" (
-    echo {
-    echo   "schema_version": 1,
-    echo   "framework": {
-    echo     "type": "%FRAMEWORK_TYPE%",
-    echo     "installed_by_us": !WE_INSTALLED!
-    echo   },
-    echo   "mod": {
-    echo     "id": "%GAME_ID%",
-    echo     "name": "%MOD_INTERNAL_NAME%",
-    echo     "version": "%MOD_VERSION%"
-    echo   }
-    echo }
-)
-exit /b 0
+call "%_BODY%" %*
+exit /b %errorlevel%
