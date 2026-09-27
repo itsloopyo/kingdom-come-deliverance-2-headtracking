@@ -31,10 +31,13 @@ constexpr int kVkY = 0x59;
 constexpr int kVkG = 0x47;
 constexpr int kVkH = 0x48;
 
-// The frozen reader keeps every code inside 0x01-0xFE, so both bindings format.
-std::string LegacyHotkey(int code, int chordLetter) {
-    return cameraunlock::input::FormatKeyBindings(
-        {KeyBinding{KeyModifiers::kNone, code}, KeyBinding{kChord, chordLetter}});
+// A legacy hotkey code with the action's hard-coded chord after it. The code
+// goes through core's N1 and N3 normalisations, so a Ctrl, Shift or Alt key on
+// its own is left unbound and logged, and the chord stays.
+std::string LegacyHotkey(int code, const char* key, int chordLetter, std::vector<DroppedValue>& dropped) {
+    std::string list = config::LegacyVirtualKeyToBindings(code, "Hotkeys", key, dropped);
+    const std::string chord = cameraunlock::input::FormatKeyBindings({KeyBinding{kChord, chordLetter}});
+    return list.empty() ? chord : list + ", " + chord;
 }
 
 // input names the legacy file, HeadTracking.ini, which the frozen reader finds
@@ -58,18 +61,41 @@ ImportResult RunLegacyImport(const config::LegacyInput& input, Config& out) {
     out.limit_y_down = read.limit_y_down;
     out.limit_z = read.limit_z;
     out.limit_z_back = read.limit_z_back;
-    out.toggle_key = LegacyHotkey(read.toggle_key, kVkY);
-    out.cycle_tracking_mode_key = LegacyHotkey(read.position_key, kVkG);
-    out.yaw_mode_key = LegacyHotkey(read.yaw_mode_key, kVkH);
+    out.toggle_key = LegacyHotkey(read.toggle_key, "ToggleKey", kVkY, dropped);
+    out.cycle_tracking_mode_key = LegacyHotkey(read.position_key, "PositionKey", kVkG, dropped);
+    out.yaw_mode_key = LegacyHotkey(read.yaw_mode_key, "YawModeKey", kVkH, dropped);
     // The game's crosshair now always follows the aim.
     if (!read.move_crosshair)
         dropped.push_back({DropRule::Reticle, "HeadTracking", "MoveCrosshair", "false"});
 
+    // A setting the player never changed from what the published build shipped
+    // follows Defaults.ini. Each hotkey's chord was hard-coded, so its code alone
+    // says whether the player changed it.
+    using C = config::schema::Concept;
+    const legacy::Config shipped;
+    config::LegacyFollowsDefaultsIni follows;
+    follows.Setting(C::UdpPort, read.udp_port, shipped.udp_port);
+    follows.Setting(C::EnableOnStartup, read.enable_on_startup, shipped.enable_on_startup);
+    follows.Setting(C::WorldSpaceYaw, read.world_space_yaw, shipped.world_space_yaw);
+    follows.TrackingMode(read.position_enabled, shipped.position_enabled);
+    follows.Setting(C::LocalSmoothing, read.local_smoothing, shipped.local_smoothing);
+    follows.Setting(C::RemoteSmoothing, read.remote_smoothing, shipped.remote_smoothing);
+    follows.NotInLegacy(C::TrueFreeLook);
+    follows.Setting(C::PositionLimitX, read.limit_x, shipped.limit_x);
+    follows.Setting(C::PositionLimitY, read.limit_y, shipped.limit_y);
+    follows.Setting(C::PositionLimitYDown, read.limit_y_down, shipped.limit_y_down);
+    follows.Setting(C::PositionLimitZ, read.limit_z, shipped.limit_z);
+    follows.Setting(C::PositionLimitZBack, read.limit_z_back, shipped.limit_z_back);
+    follows.Setting(C::ToggleKey, read.toggle_key, shipped.toggle_key);
+    follows.Setting(C::CycleTrackingModeKey, read.position_key, shipped.position_key);
+    follows.Setting(C::YawModeKey, read.yaw_mode_key, shipped.yaw_mode_key);
+    follows.NotInLegacy(C::TrueFreeLookKey);
+
     // The frozen reader finds the file the way the published build did, with
     // GetFileAttributesA on the ANSI path.
     if (GetFileAttributesA(input.ansi_path.c_str()) == INVALID_FILE_ATTRIBUTES)
-        return ImportResult::Absent(std::move(dropped));
-    return ImportResult::Imported(std::move(dropped));
+        return ImportResult::Absent(std::move(dropped), {}, follows.Concepts());
+    return ImportResult::Imported(std::move(dropped), {}, follows.Concepts());
 }
 
 }  // namespace

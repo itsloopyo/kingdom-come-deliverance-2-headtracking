@@ -24,13 +24,25 @@
 //     seeded is gone. abebb77.
 //   - [Hotkeys] AdsModeKey is no longer read, and the cycle it and Ctrl+Shift+U
 //     were registered for is gone. abebb77.
+//   - A hotkey code on a Ctrl, Shift or Alt key alone is not bound, and the
+//     action keeps its Ctrl+Shift chord (normalisation N3).
 //
 // Comparison 2, import against migration, compares every field of Config and the
-// startup state, and finds no difference. What the conversion drops is the one
-// approved change it makes: MoveCrosshair=false (approved change `reticle`), which
-// the import reports as dropped and the owner logs, since the game's crosshair now
-// always follows the aim. No moved default: every Config default is the value the
+// startup state, and finds no difference. What the conversion drops is what the
+// approved changes allow: MoveCrosshair=false (approved change `reticle`), since
+// the game's crosshair now always follows the aim, and a hotkey on a Ctrl, Shift
+// or Alt key alone (N3, ModifierKey). The import reports each as dropped and the
+// owner logs it. No moved default: every Config default is the value the
 // published build shipped, so no file converts to the published defaults too.
+//
+// A row the player never changed from what the published build shipped follows
+// Defaults.ini (owner rule of 2026-09-26): the import lists it in
+// follows_defaults_ini, the tracking mode pair as one unit. The test derives
+// that list from what the frozen reader read against the frozen defaults and
+// holds the import's list to it on every input. Every present input also
+// migrates over a Defaults.ini that differs from the built-in value on every
+// global row: an untouched row is written `default` and takes that file's
+// value, and a changed row keeps the player's.
 //
 // The published build never refuses a file, so no input is refused.
 //
@@ -179,6 +191,14 @@ public:
         return cameraunlock::config::DefaultsFile::At((root_ / "global" / "Defaults.ini").wstring());
     }
 
+    // A second Defaults.ini, which SkewedDefaultsTests writes from the built-in
+    // one with every global row changed.
+    cameraunlock::config::DefaultsFile Skewed() const {
+        return cameraunlock::config::DefaultsFile::At(SkewedPath().wstring());
+    }
+    fs::path BuiltinPath() const { return root_ / "global" / "Defaults.ini"; }
+    fs::path SkewedPath() const { return root_ / "skewed" / "Defaults.ini"; }
+
 private:
     void Clear() {
         if (!fs::exists(root_)) return;
@@ -239,6 +259,19 @@ const fs::path kRepo = KCD2_REPO_DIR;
 
 std::string PublishedFirstRun() { return ReadBytes(kDir / "inputs" / "first-run-dev-ed0140b.ini"); }
 
+// The Ctrl, Shift and Alt virtual-key codes N3 unbinds.
+constexpr int kModifierCodes[] = {0x10, 0x11, 0x12, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5};
+
+bool IsModifierCode(int code) {
+    return std::find(std::begin(kModifierCodes), std::end(kModifierCodes), code) != std::end(kModifierCodes);
+}
+
+std::string Replaced(std::string text, const std::string& from, const std::string& to) {
+    const std::size_t at = text.find(from);
+    if (at == std::string::npos) throw std::runtime_error("the text has no " + from);
+    return text.replace(at, from.size(), to);
+}
+
 std::vector<Input> Inputs() {
     std::vector<Input> inputs;
     inputs.push_back({"first run of the published build (dev, ed0140b)", true, PublishedFirstRun()});
@@ -250,6 +283,16 @@ std::vector<Input> Inputs() {
     inputs.push_back({"empty file", true, {}});
     for (IniMutation& m : GenerateIniMutations(PublishedFirstRun(), kcd2_ht::legacy::Keys(), Descriptors()))
         inputs.push_back({"corpus: " + m.name, true, std::move(m.bytes)});
+    // The corpus's hotkey alternates are plain keys, so N3 gets its own inputs.
+    for (const std::string line : {"ToggleKey=0x23", "PositionKey=0x21", "YawModeKey=0x22"}) {
+        const std::string key = line.substr(0, line.find('='));
+        for (const int code : kModifierCodes) {
+            char value[8];
+            std::snprintf(value, sizeof(value), "0x%02X", code);
+            inputs.push_back({"modifier key: " + key + "=" + value, true,
+                              Replaced(PublishedFirstRun(), line, key + "=" + value)});
+        }
+    }
     return inputs;
 }
 
@@ -441,6 +484,121 @@ bool Contains(const std::vector<std::string>& lines, const std::string& text) {
     return false;
 }
 
+using cameraunlock::config::schema::Concept;
+
+// The rows the import must leave to Defaults.ini: every one whose legacy value is
+// what the published build shipped, derived here from the frozen reader's output
+// and its own defaults, the tracking mode as one unit.
+std::set<Concept> UntouchedRows(const kcd2_ht::legacy::Config& read) {
+    const kcd2_ht::legacy::Config shipped;
+    std::set<Concept> rows{Concept::TrueFreeLook, Concept::TrueFreeLookKey};
+    const auto row = [&rows](bool unchanged, Concept id) {
+        if (unchanged) rows.insert(id);
+    };
+    row(read.udp_port == shipped.udp_port, Concept::UdpPort);
+    row(read.enable_on_startup == shipped.enable_on_startup, Concept::EnableOnStartup);
+    row(read.world_space_yaw == shipped.world_space_yaw, Concept::WorldSpaceYaw);
+    row(read.position_enabled == shipped.position_enabled, Concept::RotationEnabled);
+    row(read.position_enabled == shipped.position_enabled, Concept::PositionEnabled);
+    row(read.local_smoothing == shipped.local_smoothing, Concept::LocalSmoothing);
+    row(read.remote_smoothing == shipped.remote_smoothing, Concept::RemoteSmoothing);
+    row(read.limit_x == shipped.limit_x, Concept::PositionLimitX);
+    row(read.limit_y == shipped.limit_y, Concept::PositionLimitY);
+    row(read.limit_y_down == shipped.limit_y_down, Concept::PositionLimitYDown);
+    row(read.limit_z == shipped.limit_z, Concept::PositionLimitZ);
+    row(read.limit_z_back == shipped.limit_z_back, Concept::PositionLimitZBack);
+    row(read.toggle_key == shipped.toggle_key, Concept::ToggleKey);
+    row(read.position_key == shipped.position_key, Concept::CycleTrackingModeKey);
+    row(read.yaw_mode_key == shipped.yaw_mode_key, Concept::YawModeKey);
+    return rows;
+}
+
+// Every global row of the table: the rows a file nobody changed leaves to
+// Defaults.ini.
+const std::set<Concept> kAllRows = {
+    Concept::UdpPort, Concept::EnableOnStartup, Concept::WorldSpaceYaw, Concept::RotationEnabled,
+    Concept::PositionEnabled, Concept::LocalSmoothing, Concept::RemoteSmoothing, Concept::TrueFreeLook,
+    Concept::PositionLimitX, Concept::PositionLimitY, Concept::PositionLimitYDown, Concept::PositionLimitZ,
+    Concept::PositionLimitZBack, Concept::ToggleKey, Concept::CycleTrackingModeKey, Concept::YawModeKey,
+    Concept::TrueFreeLookKey,
+};
+
+// A Defaults.ini value other than the built-in one on every global row, as the
+// built-in file spells each line and as SkewedConfig() reads the new value.
+struct SkewedLine {
+    const char* builtin;
+    const char* skewed;
+};
+const SkewedLine kSkewedLines[] = {
+    {"UdpPort=4242", "UdpPort=4343"},
+    {"EnableOnStartup=true", "EnableOnStartup=false"},
+    {"WorldSpaceYaw=true", "WorldSpaceYaw=false"},
+    {"RotationEnabled=true", "RotationEnabled=false"},
+    {"LocalSmoothing=0.0", "LocalSmoothing=0.3"},
+    {"RemoteSmoothing=0.15", "RemoteSmoothing=0.4"},
+    {"TrueFreeLook=false", "TrueFreeLook=true"},
+    {"PositionLimitX=0.3", "PositionLimitX=0.25"},
+    {"PositionLimitY=0.2", "PositionLimitY=0.15"},
+    {"PositionLimitYDown=0.2", "PositionLimitYDown=0.12"},
+    {"PositionLimitZ=0.4", "PositionLimitZ=0.35"},
+    {"PositionLimitZBack=0.1", "PositionLimitZBack=0.07"},
+    {"ToggleKey=End, Ctrl+Shift+Y", "ToggleKey=F9"},
+    {"CycleTrackingModeKey=PageUp, Ctrl+Shift+G", "CycleTrackingModeKey=F10"},
+    {"YawModeKey=PageDown, Ctrl+Shift+H", "YawModeKey=F11"},
+    {"TrueFreeLookKey=Insert, Ctrl+Shift+U", "TrueFreeLookKey=F12"},
+};
+
+// The settings a file of nothing but `default` runs on over the skewed
+// Defaults.ini. The tracking mode there is position only.
+kcd2_ht::Config SkewedConfig() {
+    kcd2_ht::Config c = kcd2_ht::ConfigTableFor().defaults();
+    c.udp_port = 4343;
+    c.enable_on_startup = false;
+    c.world_space_yaw = false;
+    c.rotation_enabled = false;
+    c.position_enabled = true;
+    c.local_smoothing = 0.3f;
+    c.remote_smoothing = 0.4f;
+    c.true_free_look = true;
+    c.limit_x = 0.25f;
+    c.limit_y = 0.15f;
+    c.limit_y_down = 0.12f;
+    c.limit_z = 0.35f;
+    c.limit_z_back = 0.07f;
+    c.toggle_key = "F9";
+    c.cycle_tracking_mode_key = "F10";
+    c.yaw_mode_key = "F11";
+    c.true_free_look_key = "F12";
+    return c;
+}
+
+// @p c with every row in @p follows taken from @p over.
+kcd2_ht::Config OverDefaults(kcd2_ht::Config c, const std::set<Concept>& follows, const kcd2_ht::Config& over) {
+    const auto take = [&follows](Concept id) { return follows.count(id) != 0; };
+    if (take(Concept::UdpPort)) c.udp_port = over.udp_port;
+    if (take(Concept::EnableOnStartup)) c.enable_on_startup = over.enable_on_startup;
+    if (take(Concept::WorldSpaceYaw)) c.world_space_yaw = over.world_space_yaw;
+    if (take(Concept::RotationEnabled)) c.rotation_enabled = over.rotation_enabled;
+    if (take(Concept::PositionEnabled)) c.position_enabled = over.position_enabled;
+    if (take(Concept::LocalSmoothing)) c.local_smoothing = over.local_smoothing;
+    if (take(Concept::RemoteSmoothing)) c.remote_smoothing = over.remote_smoothing;
+    if (take(Concept::TrueFreeLook)) c.true_free_look = over.true_free_look;
+    if (take(Concept::PositionLimitX)) c.limit_x = over.limit_x;
+    if (take(Concept::PositionLimitY)) c.limit_y = over.limit_y;
+    if (take(Concept::PositionLimitYDown)) c.limit_y_down = over.limit_y_down;
+    if (take(Concept::PositionLimitZ)) c.limit_z = over.limit_z;
+    if (take(Concept::PositionLimitZBack)) c.limit_z_back = over.limit_z_back;
+    if (take(Concept::ToggleKey)) c.toggle_key = over.toggle_key;
+    if (take(Concept::CycleTrackingModeKey)) c.cycle_tracking_mode_key = over.cycle_tracking_mode_key;
+    if (take(Concept::YawModeKey)) c.yaw_mode_key = over.yaw_mode_key;
+    if (take(Concept::TrueFreeLookKey)) c.true_free_look_key = over.true_free_look_key;
+    return c;
+}
+
+std::string ConceptKey(Concept id) {
+    return cameraunlock::config::schema::kConcepts[static_cast<std::size_t>(id)].key;
+}
+
 // The oracle is the published source and the core sources it compiled against,
 // unchanged; the import compiles core's IniReader, which is identical to the one
 // the published build compiled.
@@ -594,7 +752,11 @@ void Comparisons(Scratch& scratch, std::set<std::string>& distinct) {
     std::cout << "Comparison 1, published build against the import, and comparison 2, import against migration\n";
     const std::vector<Input> inputs = Inputs();
     int compared = 0;
-    int dropped = 0;
+    int droppedCrosshair = 0;
+    int droppedModifier = 0;
+    int touched = 0;
+    int modeTouched = 0;
+    int skewedMigrated = 0;
     for (const Input& input : inputs) {
         const fs::path oracleDir = scratch.Folder("oracle");
         const fs::path importDir = scratch.Folder("import");
@@ -608,7 +770,17 @@ void Comparisons(Scratch& scratch, std::set<std::string>& distinct) {
         const kcd2_config_oracle::Result published = kcd2_config_oracle::Startup(oracleDir.string());
         const Imported imported = RunImport(importFile);
 
-        for (const std::string& field : Differences(FromOracle(published), FromImport(imported)))
+        // N3: the published build bound a Ctrl, Shift or Alt code as a key of its
+        // own. The import leaves that one binding out and keeps the chord.
+        Observed oracle = FromOracle(published);
+        const auto withoutModifier = [](std::vector<KeyBinding>& list, int code) {
+            if (!IsModifierCode(code)) return;
+            list.erase(std::remove(list.begin(), list.end(), KeyBinding{KeyModifiers::kNone, code}), list.end());
+        };
+        withoutModifier(oracle.toggle, imported.frozen.toggle_key);
+        withoutModifier(oracle.cycle_tracking_mode, imported.frozen.position_key);
+        withoutModifier(oracle.yaw_mode, imported.frozen.yaw_mode_key);
+        for (const std::string& field : Differences(oracle, FromImport(imported)))
             Fail(input.name + ": comparison 1: " + field + " differs from the published build");
         if (published.ads_mode_cycle.size() != 2)
             Fail(input.name + ": the published build registered no ADS mode cycle");
@@ -617,13 +789,30 @@ void Comparisons(Scratch& scratch, std::set<std::string>& distinct) {
                                                   : cameraunlock::config::ImportStatus::Absent;
         if (imported.result.status != expectedStatus)
             Fail(input.name + ": the import's status is not " + (input.present ? "Imported" : "Absent"));
-        const bool dropsCrosshair = !imported.frozen.move_crosshair;
-        const bool droppedAsReticle = imported.result.dropped.size() == 1
-            && imported.result.dropped[0].rule == cameraunlock::config::DropRule::Reticle
-            && imported.result.dropped[0].key == "MoveCrosshair";
-        if (dropsCrosshair ? !droppedAsReticle : !imported.result.dropped.empty())
-            Fail(input.name + ": the import's dropped values are not exactly MoveCrosshair=false");
-        if (dropsCrosshair) ++dropped;
+        using cameraunlock::config::DropRule;
+        std::set<std::pair<DropRule, std::string>> expectedDrops;
+        if (!imported.frozen.move_crosshair) expectedDrops.insert({DropRule::Reticle, "MoveCrosshair"});
+        if (IsModifierCode(imported.frozen.toggle_key)) expectedDrops.insert({DropRule::ModifierKey, "ToggleKey"});
+        if (IsModifierCode(imported.frozen.position_key)) expectedDrops.insert({DropRule::ModifierKey, "PositionKey"});
+        if (IsModifierCode(imported.frozen.yaw_mode_key)) expectedDrops.insert({DropRule::ModifierKey, "YawModeKey"});
+        std::set<std::pair<DropRule, std::string>> drops;
+        for (const auto& d : imported.result.dropped) drops.insert({d.rule, d.key});
+        if (drops != expectedDrops || drops.size() != imported.result.dropped.size())
+            Fail(input.name + ": the import's dropped values are not exactly MoveCrosshair=false and the "
+                 "hotkeys on a Ctrl, Shift or Alt key alone");
+        if (!imported.frozen.move_crosshair) ++droppedCrosshair;
+        for (const auto& d : drops)
+            if (d.first == DropRule::ModifierKey) ++droppedModifier;
+
+        const std::set<Concept> follows(imported.result.follows_defaults_ini.begin(),
+                                        imported.result.follows_defaults_ini.end());
+        const std::set<Concept> untouched = UntouchedRows(imported.frozen);
+        if (follows.size() != imported.result.follows_defaults_ini.size() || follows != untouched)
+            Fail(input.name + ": the rows left to Defaults.ini are not exactly the ones the player never changed");
+        if (!input.present && follows != kAllRows)
+            Fail(input.name + ": with no file, not every row follows Defaults.ini");
+        if (untouched != kAllRows) ++touched;
+        if (!untouched.count(Concept::RotationEnabled)) ++modeTouched;
         if (!imported.result.pose_shaping.empty())
             Fail(input.name + ": the import recorded pose shaping the published build never applied");
 
@@ -639,12 +828,42 @@ void Comparisons(Scratch& scratch, std::set<std::string>& distinct) {
             if (fromReadOnly.bytes != migrated.bytes
                     || !ConfigDifferences(fromReadOnly.config, migrated.config).empty())
                 Fail(input.name + ": a read-only HeadTracking.ini migrates differently from a writable one");
+
+            // Over a Defaults.ini that differs everywhere: an untouched row is
+            // written default and takes its value, a changed row keeps the player's.
+            const fs::path dir = scratch.Folder("skewed");
+            WriteBytes(dir / "HeadTracking.ini", input.bytes);
+            cameraunlock::config::ConfigOwner<kcd2_ht::Config> owner(
+                kcd2_ht::OwnerOptions(dir.wstring(), scratch.Skewed()));
+            const auto loaded = owner.Load();
+            if (loaded.status != cameraunlock::config::ConfigLoadStatus::Migrated) {
+                Fail(input.name + " (skewed Defaults.ini): the owner's load is not Migrated");
+            } else {
+                const kcd2_ht::Config want = OverDefaults(imported.config, follows, SkewedConfig());
+                for (const std::string& field : ConfigDifferences(want, loaded.config))
+                    Fail(input.name + " (skewed Defaults.ini): " + field +
+                         " is not Defaults.ini's where untouched and the import's where changed");
+                const std::string bytes = ReadBytes(dir / "CameraUnlock.ini");
+                for (const Concept row : follows)
+                    if (bytes.find("\r\n" + ConceptKey(row) + "=default\r\n") == std::string::npos)
+                        Fail(input.name + " (skewed Defaults.ini): " + ConceptKey(row) + " is not written default");
+                distinct.insert(bytes);
+                ++skewedMigrated;
+            }
         }
         distinct.insert(migrated.bytes);
         ++compared;
     }
     Check(compared > 1000, std::to_string(compared) + " inputs compared");
-    Check(dropped > 0, std::to_string(dropped) + " of them drop MoveCrosshair=false as a reticle setting");
+    Check(droppedCrosshair > 0,
+          std::to_string(droppedCrosshair) + " of them drop MoveCrosshair=false as a reticle setting");
+    Check(droppedModifier >= 27,
+          std::to_string(droppedModifier) + " hotkeys on a Ctrl, Shift or Alt key alone dropped as ModifierKey");
+    Check(touched > 0 && modeTouched > 0,
+          std::to_string(touched) + " inputs change a row, " + std::to_string(modeTouched) +
+              " of them the tracking mode, which then does not follow Defaults.ini");
+    Check(skewedMigrated == compared - 1,
+          std::to_string(skewedMigrated) + " present inputs migrated over a Defaults.ini that differs everywhere");
 }
 
 // The published build's first-run file, which is also what its players hold if
@@ -678,6 +897,28 @@ void FreshEqualsUpgradeTests(Scratch& scratch) {
           "a fresh install creates the committed file byte for byte as CameraUnlock.ini");
 }
 
+// Writes the skewed Defaults.ini from the built-in one an earlier owner created,
+// and checks it: a fresh install over it writes the committed file and runs on
+// its values.
+void SkewedDefaultsTests(Scratch& scratch) {
+    std::cout << "Skewed Defaults.ini\n";
+    std::string text = ReadBytes(scratch.BuiltinPath());
+    for (const SkewedLine& line : kSkewedLines)
+        text = Replaced(text, std::string("\r\n") + line.builtin + "\r\n",
+                        std::string("\r\n") + line.skewed + "\r\n");
+    fs::create_directories(scratch.SkewedPath().parent_path());
+    WriteBytes(scratch.SkewedPath(), text);
+
+    const fs::path fresh = scratch.Folder("fresh-skewed");
+    cameraunlock::config::ConfigOwner<kcd2_ht::Config> create(
+        kcd2_ht::OwnerOptions(fresh.wstring(), scratch.Skewed()));
+    const auto loaded = create.Load();
+    Check(loaded.status == cameraunlock::config::ConfigLoadStatus::Created
+              && ConfigDifferences(loaded.config, SkewedConfig()).empty()
+              && ReadBytes(fresh / "CameraUnlock.ini") == ReadBytes(kRepo / "HeadTracking.ini"),
+          "a fresh install over the skewed Defaults.ini writes the committed file and runs on its values");
+}
+
 // Each distinct migrated file, under migrated\ beside this executable, replacing
 // what an earlier run left there.
 void WriteForLint(const std::set<std::string>& distinct) {
@@ -700,9 +941,10 @@ int main() {
         Scratch scratch;
         FrozenSourceTests();
         FirstRunTests(scratch);
+        FreshEqualsUpgradeTests(scratch);
+        SkewedDefaultsTests(scratch);
         std::set<std::string> distinct;
         Comparisons(scratch, distinct);
-        FreshEqualsUpgradeTests(scratch);
         WriteForLint(distinct);
     } catch (const std::exception& e) {
         std::cout << "  [FAIL] threw: " << e.what() << "\n";
