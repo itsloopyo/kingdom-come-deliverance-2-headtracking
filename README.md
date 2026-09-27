@@ -2,21 +2,11 @@
 
 Move the in-game view with your real head while the mouse keeps the aim, no VR headset required.
 
-> **Status: pre-release.** Basic head tracking with look+aim decoupling is in,
-> however no testing beyond that has been done - game-breaking bugs may be
-> present
-
-> **Updating from an earlier version?** Settings now live in `CameraUnlock.ini`,
-> beside `KingdomCome.exe`. The first time this version starts it reads your
-> settings from `HeadTracking.ini` and writes them into `CameraUnlock.ini`. It
-> never changes `HeadTracking.ini`, and does not read it again while
-> `CameraUnlock.ini` exists. See [Configuration](#configuration) for what is and
-> is not carried over.
-
 ## Features
 
 - **Decoupled look and aim** - head tracking moves the camera, aim stays on your mouse or controller
-- **6DOF positional tracking** - lean and peek with head position, limited so you never clip through Henry
+- **6DOF tracking** - rotation plus positional lean and peek
+- **Works with any OpenTrack compatible tracker** - free options available for PC, iOS and Android
 
 ## Requirements
 
@@ -262,20 +252,6 @@ YawModeKey=default
 TrueFreeLookKey=default
 ```
 <!-- /cameraunlock:config -->
-
-These settings from earlier versions are gone:
-
-- `MoveCrosshair`. The game's crosshair now always follows your aim, and no
-  setting turns that off. Where `HeadTracking.ini` set it to `false`, the
-  import logs that value as not carried.
-- `[ADS] AdsMode` and `[Hotkeys] AdsModeKey`. The paused, marker and tracked
-  aiming modes are gone, including paused, which was the default. Head tracking
-  now carries on while you aim and the mod draws no aim marker. `Insert` /
-  `Ctrl+Shift+U` toggle true free look instead. The import logs both keys as
-  not carried.
-- Where `HeadTracking.ini` still has the older `ShowReticle`, the import logs a
-  line telling you to use `MoveCrosshair`. That advice is out of date, since
-  `MoveCrosshair` is gone as well.
 
 The mod saves the tracking mode (`Page Up`), the yaw mode (`Page Down`) and
 true free look (`Insert`) to `CameraUnlock.ini` the moment you change them, so each one
