@@ -113,6 +113,11 @@ jobs:
         shell: pwsh
         run: pixi run package
 
+      # package ran the unit tests; the config differential runs on releases only.
+      - name: Config differential test
+        shell: pwsh
+        run: pixi run test-differential
+
       - name: Generate release notes
         shell: pwsh
         run: |
